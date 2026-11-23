@@ -1,0 +1,7 @@
+# Baseline dependencies. Provider dependencies will be finalized in Stage 1.
+agno
+openai
+httpx
+feedparser
+streamlit>=1.30
+
