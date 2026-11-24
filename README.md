@@ -28,7 +28,7 @@ GitHub · arXiv · Hacker News · Medium · Hugging Face
 | Quality loop | None. | Independent critic (groundedness, profile relevance, completeness) and up to two revisions driven by its feedback. |
 | Evaluation | None. | 18 manually reviewed cases with measured agreement, invalid-output rate, groundedness, latency and tokens. |
 | Providers | OpenAI only, through `agno`. | Provider-neutral `LLMClient`: GetQHSE gateway (default), OpenRouter, OpenAI, Google Gemini, Ollama Cloud. Latency and token usage are recorded; keys are redacted. |
-| Tests | One mock verification script. | 62 unit tests plus `verify.py` running the real agent methods with mocked model responses. |
+| Tests | One mock verification script. | 66 unit tests plus `verify.py` running the real agent methods with mocked model responses. |
 
 ## Measured baseline
 
@@ -48,6 +48,15 @@ These numbers are reported honestly: the small 2B model often rates explicit
 removals and deprecations as LOW risk, and its digest did not pass the critic
 after two revisions. The pipeline reported `needs_review` instead of
 presenting a weak report as finished.
+
+### Improvement: risk accuracy 72% → 89%
+
+The baseline showed the 2B model rating explicit removals and deprecations as
+LOW. Adding a severity rubric, four few-shot examples (different from the test
+cases) and a one-time "second look" when the model says LOW about explicit
+risk wording raised **risk agreement from 72.22% to 88.89%** on the same 18
+cases with the same model. Details, remaining misses and limits:
+[evaluations/reports/RISK_IMPROVEMENT.md](evaluations/reports/RISK_IMPROVEMENT.md).
 
 ## Setup
 
@@ -114,9 +123,10 @@ Related notes: [BASELINE_REPORT.md](BASELINE_REPORT.md),
 
 ## Next steps
 
-1. **Model per role**: keep a small model for relevance, use a stronger one
-   for synthesis and a different one for the critic, so the review is truly
-   independent and revision success improves.
+1. **Smaller critic tasks**: a 2B model struggles to score three criteria at
+   once (revision success is 0%). Split the critic into simple yes/no checks
+   per claim ("is this claim supported by EV-x?"). When a stronger model is
+   available, use it for synthesis and the critic.
 2. **Parallel analysis**: run relevance and risk across signals concurrently
    (or merge them into one call per signal) to cut end-to-end latency.
 3. **Per-signal failure isolation**: mark a signal `analysis_failed` and
@@ -125,6 +135,6 @@ Related notes: [BASELINE_REPORT.md](BASELINE_REPORT.md),
    instruct the model to treat it as data only.
 5. **Native structured output**: use JSON-schema response formats generated
    from the Pydantic models where the provider supports them.
-6. **Deterministic risk guard**: when explicit removal or deprecation wording
-   meets a LOW verdict, re-ask or escalate rather than accept it.
+6. **Larger held-out evaluation set** so prompt changes are measured on cases
+   they were not designed around.
 7. **Result caching** by signal and model to avoid paying twice on re-runs.

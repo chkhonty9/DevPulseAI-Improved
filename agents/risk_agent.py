@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from typing import Any, Dict, List, Mapping, Optional, Sequence
@@ -32,6 +33,32 @@ class RiskAgent:
         r"\b(?:must|required|mandatory)\b.{0,40}\b(?:migrat\w*|upgrad\w*)\b",
         re.IGNORECASE,
     )
+    # Explicit risk wording. A LOW verdict on text containing one of these
+    # terms gets one second look; the model still makes the final decision.
+    EXPLICIT_RISK_TERMS = re.compile(
+        r"\b(?:remov(?:e|es|ed|al)|deprecat\w*|breaking|incompatib\w*|"
+        r"vulnerab\w*|exploit\w*|CVE-\d{4}-\d+|privilege escalation|"
+        r"authentication bypass|no longer supported|drops? support|"
+        r"end[- ]of[- ]life|requires? migration|must migrate)\b",
+        re.IGNORECASE,
+    )
+
+    SEVERITY_RUBRIC = """Severity rubric:
+- CRITICAL: the text calls a vulnerability critical or actively exploited.
+- HIGH: a high-severity vulnerability, or a change that breaks existing
+  deployments, data, or authentication (incompatible formats, removed modes).
+- MEDIUM: a deprecation, or a removed or changed API that needs code changes.
+- LOW: no explicit vulnerability, breaking change, removal, or deprecation."""
+
+    FEW_SHOT_EXAMPLES = """Examples (illustrative, not part of the source):
+Text: "ChartKit adds dark mode and faster rendering."
+JSON: {"risk_level":"LOW","concerns":[],"evidence_quotes":[],"recommended_actions":[],"breaking_changes":false}
+Text: "The CSV importer deprecates the delimiter option; it will be removed later."
+JSON: {"risk_level":"MEDIUM","concerns":["The delimiter option is deprecated"],"evidence_quotes":["deprecates the delimiter option"],"recommended_actions":["Find usages of the delimiter option and plan a replacement"],"breaking_changes":true}
+Text: "The new cache format is incompatible with existing cache files."
+JSON: {"risk_level":"HIGH","concerns":["Existing cache files cannot be read"],"evidence_quotes":["incompatible with existing cache files"],"recommended_actions":["Test the new format against existing cache files before rollout"],"breaking_changes":true}
+Text: "An actively exploited remote code execution flaw affects ImageLib."
+JSON: {"risk_level":"CRITICAL","concerns":["Remote code execution is actively exploited"],"evidence_quotes":["actively exploited remote code execution flaw"],"recommended_actions":["Check whether ImageLib is used and apply the vendor fix"],"breaking_changes":false}"""
 
     def __init__(
         self,
@@ -68,36 +95,96 @@ If the title and description do not explicitly state a vulnerability,
 breaking or incompatible change, removal, or deprecation, return exactly:
 {{"risk_level":"LOW","concerns":[],"evidence_quotes":[],"recommended_actions":[],"breaking_changes":false}}
 
-Otherwise, use LOW, MEDIUM, HIGH, or CRITICAL for risk_level. Every concern
+Otherwise, use MEDIUM, HIGH, or CRITICAL for risk_level. Every concern
 must have one matching evidence quote copied from the source text and one
 conservative action. All three fields are arrays of plain JSON strings, never
 objects. Do not invent identifiers, versions, or requirements.
 
+{self.SEVERITY_RUBRIC}
+
+{self.FEW_SHOT_EXAMPLES}
+
 Return one JSON object only."""
 
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "Assess only explicit technical risk facts. The only "
+                    "allowed top-level keys are risk_level, concerns, "
+                    "evidence_quotes, recommended_actions, and "
+                    "breaking_changes. Return JSON only."
+                ),
+            },
+            {"role": "user", "content": prompt},
+        ]
+        task_name = (
+            "Risk analysis for "
+            f"'{str(signal.get('title', 'Untitled'))[:80]}'"
+        )
+        result = self._complete(messages, signal, task_name)
+
+        # Second look: small models often answer LOW even when the text
+        # explicitly says "removed" or "deprecated". Ask once more, pointing
+        # at the exact wording. This is not a heuristic override: the model's
+        # second answer is final, and it may still choose LOW.
+        if result["risk_level"] == "LOW":
+            source_text = " ".join(
+                [str(signal.get("title", "")), str(signal.get("description", ""))]
+            )
+            terms = self.find_explicit_risk_terms(source_text)
+            if terms:
+                review_messages = [
+                    *messages,
+                    {"role": "assistant", "content": json.dumps(result)},
+                    {
+                        "role": "user",
+                        "content": (
+                            "Check your answer again. The source text "
+                            "explicitly contains: "
+                            + ", ".join(f'"{term}"' for term in terms)
+                            + ". If this wording describes a vulnerability, "
+                            "breaking change, removal, or deprecation, return "
+                            "MEDIUM, HIGH, or CRITICAL using the severity "
+                            "rubric, with evidence quotes copied from the "
+                            "source. If it does not describe a risk to "
+                            "existing users, return LOW again. Return one "
+                            "JSON object only."
+                        ),
+                    },
+                ]
+                result = self._complete(
+                    review_messages,
+                    signal,
+                    task_name + " (second look)",
+                )
+        return result
+
+    def _complete(
+        self,
+        messages: List[Mapping[str, str]],
+        signal: Dict[str, Any],
+        task_name: str,
+    ) -> Dict[str, Any]:
         return complete_validated_json(
             llm_client=self._get_llm_client(),
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "Assess only explicit technical risk facts. The only "
-                        "allowed top-level keys are risk_level, concerns, "
-                        "evidence_quotes, recommended_actions, and "
-                        "breaking_changes. Return JSON only."
-                    ),
-                },
-                {"role": "user", "content": prompt},
-            ],
+            messages=messages,
             validator=lambda payload: self._validate_response(payload, signal),
-            task_name=(
-                "Risk analysis for "
-                f"'{str(signal.get('title', 'Untitled'))[:80]}'"
-            ),
+            task_name=task_name,
             model=self.model_id,
             temperature=0.0,
             max_tokens=650,
         )
+
+    @classmethod
+    def find_explicit_risk_terms(cls, text: str) -> List[str]:
+        """Return distinct explicit risk terms found in the source text."""
+        found: List[str] = []
+        for match in cls.EXPLICIT_RISK_TERMS.finditer(text):
+            term = match.group(0)
+            if term.casefold() not in {item.casefold() for item in found}:
+                found.append(term)
+        return found
 
     def assess_batch(self, signals: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Assess multiple signals and stop immediately on an AI failure."""

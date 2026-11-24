@@ -1,0 +1,138 @@
+{
+  "model": "qwen3.5:2b",
+  "cases": 18,
+  "risk_agreement_pct": 88.89,
+  "failed_cases": 1,
+  "model_calls": 19,
+  "total_tokens": 12743,
+  "cumulative_model_latency_ms": 158987,
+  "wall_time_s": 159.0,
+  "case_results": [
+    {
+      "case_id": "python-breaking-api",
+      "expected": "MEDIUM",
+      "got": "MEDIUM",
+      "agrees": true,
+      "error": null
+    },
+    {
+      "case_id": "spring-security-cve",
+      "expected": "CRITICAL",
+      "got": "CRITICAL",
+      "agrees": true,
+      "error": null
+    },
+    {
+      "case_id": "javascript-deprecation",
+      "expected": "MEDIUM",
+      "got": "MEDIUM",
+      "agrees": true,
+      "error": null
+    },
+    {
+      "case_id": "rust-release-no-risk",
+      "expected": "LOW",
+      "got": "LOW",
+      "agrees": true,
+      "error": null
+    },
+    {
+      "case_id": "rust-off-profile",
+      "expected": "LOW",
+      "got": "LOW",
+      "agrees": true,
+      "error": null
+    },
+    {
+      "case_id": "rag-paper",
+      "expected": "LOW",
+      "got": "LOW",
+      "agrees": true,
+      "error": null
+    },
+    {
+      "case_id": "mobile-paper-off-profile",
+      "expected": "LOW",
+      "got": "LOW",
+      "agrees": true,
+      "error": null
+    },
+    {
+      "case_id": "postgres-removal",
+      "expected": "HIGH",
+      "got": "HIGH",
+      "agrees": true,
+      "error": null
+    },
+    {
+      "case_id": "kubernetes-vulnerability",
+      "expected": "HIGH",
+      "got": null,
+      "agrees": false,
+      "error": "AnalysisFailedError: Risk analysis for 'Kubernetes privilege escalation advisory' failed after one correction attempt: unsupported identifier or version: 1.34.3. No heuristic result"
+    },
+    {
+      "case_id": "css-library",
+      "expected": "LOW",
+      "got": "LOW",
+      "agrees": true,
+      "error": null
+    },
+    {
+      "case_id": "dotnet-breaking-change",
+      "expected": "HIGH",
+      "got": "MEDIUM",
+      "agrees": false,
+      "error": null
+    },
+    {
+      "case_id": "llm-model-release",
+      "expected": "LOW",
+      "got": "LOW",
+      "agrees": true,
+      "error": null
+    },
+    {
+      "case_id": "go-cli-release",
+      "expected": "LOW",
+      "got": "LOW",
+      "agrees": true,
+      "error": null
+    },
+    {
+      "case_id": "react-security-fix",
+      "expected": "HIGH",
+      "got": "HIGH",
+      "agrees": true,
+      "error": null
+    },
+    {
+      "case_id": "docker-docs",
+      "expected": "LOW",
+      "got": "LOW",
+      "agrees": true,
+      "error": null
+    },
+    {
+      "case_id": "terraform-provider-deprecation",
+      "expected": "MEDIUM",
+      "got": "MEDIUM",
+      "agrees": true,
+      "error": null
+    },
+    {
+      "case_id": "php-package-off-profile",
+      "expected": "LOW",
+      "got": "LOW",
+      "agrees": true,
+      "error": null
+    },
+    {
+      "case_id": "fastapi-feature",
+      "expected": "LOW",
+      "got": "LOW",
+      "agrees": true,
+      "error": null
+    }
+  ]
+}

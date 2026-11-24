@@ -176,6 +176,76 @@ class AgentOpenRouterTests(unittest.TestCase):
         self.assertTrue(result["breaking_changes"])
         self.assertEqual(len(client.calls), 1)
 
+    def test_low_on_explicit_deprecation_gets_one_second_look(self):
+        signal = {
+            **self.signal,
+            "title": "Library deprecates legacy loader",
+            "description": "The legacy loader is deprecated and will be removed.",
+        }
+        client = FakeLLMClient(
+            [
+                '{"risk_level": "LOW", "concerns": [], "evidence_quotes": [], '
+                '"recommended_actions": [], "breaking_changes": false}',
+                '{"risk_level": "MEDIUM", '
+                '"concerns": ["The legacy loader is deprecated."], '
+                '"evidence_quotes": ["The legacy loader is deprecated"], '
+                '"recommended_actions": ["Plan a move off the legacy loader."], '
+                '"breaking_changes": true}',
+            ]
+        )
+
+        result = RiskAgent("test/model", client).assess(signal)
+
+        self.assertEqual(result["risk_level"], "MEDIUM")
+        self.assertEqual(len(client.calls), 2)
+        second_look_prompt = client.calls[1][0][-1]["content"]
+        self.assertIn('"deprecates"', second_look_prompt)
+        self.assertIn('"removed"', second_look_prompt)
+
+    def test_second_look_keeps_model_low_decision(self):
+        signal = {
+            **self.signal,
+            "title": "Image tool removes background noise",
+            "description": "A filter that removes noise from photos.",
+        }
+        low = (
+            '{"risk_level": "LOW", "concerns": [], "evidence_quotes": [], '
+            '"recommended_actions": [], "breaking_changes": false}'
+        )
+        client = FakeLLMClient([low, low])
+
+        result = RiskAgent("test/model", client).assess(signal)
+
+        self.assertEqual(result["risk_level"], "LOW")
+        self.assertEqual(len(client.calls), 2)
+
+    def test_low_without_risk_wording_needs_no_second_look(self):
+        client = FakeLLMClient(
+            [
+                '{"risk_level": "LOW", "concerns": [], "evidence_quotes": [], '
+                '"recommended_actions": [], "breaking_changes": false}'
+            ]
+        )
+
+        result = RiskAgent("test/model", client).assess(self.signal)
+
+        self.assertEqual(result["risk_level"], "LOW")
+        self.assertEqual(len(client.calls), 1)
+
+    def test_risk_prompt_includes_rubric_and_examples(self):
+        client = FakeLLMClient(
+            [
+                '{"risk_level": "LOW", "concerns": [], "evidence_quotes": [], '
+                '"recommended_actions": [], "breaking_changes": false}'
+            ]
+        )
+
+        RiskAgent("test/model", client).assess(self.signal)
+
+        prompt = client.calls[0][0][-1]["content"]
+        self.assertIn("Severity rubric", prompt)
+        self.assertIn("Examples (illustrative", prompt)
+
     def test_evidence_quote_must_exist_in_signal(self):
         client = FakeLLMClient(
             [

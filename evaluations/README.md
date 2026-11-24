@@ -25,3 +25,12 @@ Run all cases and save the report:
 
 Cost remains `null` unless both token prices are supplied explicitly with
 `--input-cost-per-million` and `--output-cost-per-million`.
+
+Run only the risk agent over all cases (faster, about 3 minutes on the
+self-hosted qwen server):
+
+```powershell
+.\.venv\Scripts\python.exe evaluationsun_risk_evaluation.py
+```
+
+See `reports/RISK_IMPROVEMENT.md` for the latest risk result.
