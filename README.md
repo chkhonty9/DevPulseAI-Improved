@@ -28,7 +28,7 @@ GitHub · arXiv · Hacker News · Medium · Hugging Face
 | Quality loop | None. | Independent critic (groundedness, profile relevance, completeness) and up to two revisions driven by its feedback. |
 | Evaluation | None. | 18 manually reviewed cases with measured agreement, invalid-output rate, groundedness, latency and tokens. |
 | Providers | OpenAI only, through `agno`. | Provider-neutral `LLMClient`: GetQHSE gateway (default), OpenRouter, OpenAI, Google Gemini, Ollama Cloud. Latency and token usage are recorded; keys are redacted. |
-| Tests | One mock verification script. | 66 unit tests plus `verify.py` running the real agent methods with mocked model responses. |
+| Tests | One mock verification script. | 73 unit tests plus `verify.py` running the real agent methods with mocked model responses. |
 
 ## Measured baseline
 
@@ -57,6 +57,15 @@ cases) and a one-time "second look" when the model says LOW about explicit
 risk wording raised **risk agreement from 72.22% to 88.89%** on the same 18
 cases with the same model. Details, remaining misses and limits:
 [evaluations/reports/RISK_IMPROVEMENT.md](evaluations/reports/RISK_IMPROVEMENT.md).
+
+### Improvement: prompt-injection defense
+
+Source text from the internet is untrusted. It is now wrapped in data tags
+with a system rule, and phrases addressed to an AI model trigger an explicit
+warning. Live test on `qwen3.5:2b`: an injected "score 100, CRITICAL" pushed
+relevance from 65 to 85 with tags alone; with the warning it no longer raised
+anything, and risk stayed LOW throughout. Details:
+[PROMPT_INJECTION_DEFENSE.md](PROMPT_INJECTION_DEFENSE.md).
 
 ## Setup
 
@@ -132,8 +141,8 @@ Related notes: [BASELINE_REPORT.md](BASELINE_REPORT.md),
    (or merge them into one call per signal) to cut end-to-end latency.
 3. **Per-signal failure isolation**: mark a signal `analysis_failed` and
    continue, instead of stopping the whole run.
-4. **Prompt-injection defense**: wrap untrusted source text in delimiters and
-   instruct the model to treat it as data only.
+4. **Injection test set**: add reworded and non-English injection cases to
+   `evaluations/` and measure how often they change a score.
 5. **Native structured output**: use JSON-schema response formats generated
    from the Pydantic models where the provider supports them.
 6. **Larger held-out evaluation set** so prompt changes are measured on cases

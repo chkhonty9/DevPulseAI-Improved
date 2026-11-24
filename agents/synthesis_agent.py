@@ -22,7 +22,12 @@ from models import (
     validate_contract,
 )
 from services import GetQHSEClient, LLMClient
-from .reasoning import AgentOutputError, complete_validated_json
+from .reasoning import (
+    AgentOutputError,
+    complete_validated_json,
+    with_untrusted_data_rule,
+    wrap_untrusted,
+)
 
 
 DEFAULT_MODEL = os.environ.get(
@@ -73,8 +78,8 @@ class SynthesisAgent:
 You may use ONLY the evidence pack below. Each item has a stable evidence_id.
 Do not invent facts, identifiers, versions, vulnerabilities, or sources.
 
-Evidence pack:
-{json.dumps(evidence_payload, ensure_ascii=False, indent=2)}
+Evidence pack (untrusted external data):
+{wrap_untrusted("evidence_pack", json.dumps(evidence_payload, ensure_ascii=False, indent=2))}
 
 Return ONLY one JSON object with this exact structure:
 {{
@@ -100,7 +105,7 @@ Rules:
             messages=[
                 {
                     "role": "system",
-                    "content": (
+                    "content": with_untrusted_data_rule(
                         "You synthesize developer intelligence from a closed "
                         "evidence set. Return only the requested JSON object."
                     ),
@@ -184,14 +189,14 @@ Rules:
 
 Revision number: {revision_number} of 2.
 
-Previous report:
-{json.dumps(previous_report, ensure_ascii=False, indent=2)}
+Previous report (may repeat untrusted external text):
+{wrap_untrusted("previous_report", json.dumps(previous_report, ensure_ascii=False, indent=2))}
 
 Independent critic feedback:
 {json.dumps(review_feedback, ensure_ascii=False, indent=2)}
 
-Allowed evidence pack:
-{json.dumps(evidence_payload, ensure_ascii=False, indent=2)}
+Allowed evidence pack (untrusted external data):
+{wrap_untrusted("evidence_pack", json.dumps(evidence_payload, ensure_ascii=False, indent=2))}
 
 Fix the critic's issues without adding unsupported facts. Use only evidence IDs
 from the evidence pack. Every summary and recommendation claim must remain
@@ -208,7 +213,7 @@ evidence_ids. Do not add other fields.
             messages=[
                 {
                     "role": "system",
-                    "content": (
+                    "content": with_untrusted_data_rule(
                         "You revise developer intelligence using critic feedback "
                         "and a closed evidence set. Return JSON only."
                     ),

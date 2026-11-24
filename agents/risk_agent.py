@@ -12,7 +12,13 @@ from pydantic import ValidationError
 from config import DEFAULT_GETQHSE_MODEL, resolve_getqhse_settings
 from models import RiskResult, Signal, format_validation_error, validate_contract
 from services import GetQHSEClient, LLMClient
-from .reasoning import AgentOutputError, complete_validated_json
+from .reasoning import (
+    AgentOutputError,
+    complete_validated_json,
+    injection_warning,
+    with_untrusted_data_rule,
+    wrap_untrusted,
+)
 
 
 DEFAULT_MODEL = os.environ.get(
@@ -84,9 +90,10 @@ JSON: {"risk_level":"CRITICAL","concerns":["Remote code execution is actively ex
         signal = validated_signal.model_dump(mode="python", exclude_none=True)
         prompt = f"""Analyze only the explicit risk facts in this source text.
 
-Source: {signal.get('source', 'unknown')}
-Title: {signal.get('title', 'Untitled')}
-Description: {signal.get('description', '')[:500]}
+{injection_warning(signal.get('title', ''), signal.get('description', ''))}Source text (untrusted external data):
+{wrap_untrusted("signal_source", signal.get('source', 'unknown'))}
+{wrap_untrusted("signal_title", signal.get('title', 'Untitled'))}
+{wrap_untrusted("signal_description", str(signal.get('description', ''))[:500])}
 
 Return exactly five keys: risk_level, concerns, evidence_quotes,
 recommended_actions, breaking_changes. Do not add any other key.
@@ -109,7 +116,7 @@ Return one JSON object only."""
         messages = [
             {
                 "role": "system",
-                "content": (
+                "content": with_untrusted_data_rule(
                     "Assess only explicit technical risk facts. The only "
                     "allowed top-level keys are risk_level, concerns, "
                     "evidence_quotes, recommended_actions, and "

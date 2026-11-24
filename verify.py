@@ -111,7 +111,10 @@ class MockLLMClient:
                 ],
             }
         else:
-            breaking = "Title: GPT-5 Breaking Changes in API" in user_prompt
+            breaking = (
+                "<signal_title>\nGPT-5 Breaking Changes in API\n</signal_title>"
+                in user_prompt
+            )
             payload = {
                 "risk_level": "MEDIUM" if breaking else "LOW",
                 "concerns": ["Potential compatibility impact"] if breaking else [],

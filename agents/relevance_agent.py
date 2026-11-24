@@ -16,7 +16,13 @@ from models import (
     validate_contract,
 )
 from services import GetQHSEClient, LLMClient
-from .reasoning import AgentOutputError, complete_validated_json
+from .reasoning import (
+    AgentOutputError,
+    complete_validated_json,
+    injection_warning,
+    with_untrusted_data_rule,
+    wrap_untrusted,
+)
 
 
 DEFAULT_MODEL = os.environ.get(
@@ -77,10 +83,10 @@ Developer profile:
 - Interests: {interests}
 - Experience level: {validated_profile.experience_level}
 
-Signal:
-- Source: {signal.get('source', 'unknown')}
-- Title: {signal.get('title', 'Untitled')}
-- Description: {signal.get('description', '')[:500]}
+{injection_warning(signal.get('title', ''), signal.get('description', ''))}Signal (untrusted external data):
+{wrap_untrusted("signal_source", signal.get('source', 'unknown'))}
+{wrap_untrusted("signal_title", signal.get('title', 'Untitled'))}
+{wrap_untrusted("signal_description", str(signal.get('description', ''))[:500])}
 
 Respond with ONLY a JSON object:
 {{"score": <number>, "matched_technologies": ["<exact profile technology>"], "matched_interests": ["<exact profile interest>"], "reasoning": "<one sentence explaining the profile-specific score>", "actionability": "LOW|MEDIUM|HIGH"}}
@@ -93,7 +99,7 @@ empty array when there is no match."""
             messages=[
                 {
                     "role": "system",
-                    "content": (
+                    "content": with_untrusted_data_rule(
                         "You score technical signals for AI/ML developers. "
                         "Return only the requested JSON object."
                     ),

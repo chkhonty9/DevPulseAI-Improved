@@ -19,7 +19,12 @@ from models import (
     validate_contract,
 )
 from services import GetQHSEClient, LLMClient
-from .reasoning import AgentOutputError, complete_validated_json
+from .reasoning import (
+    AgentOutputError,
+    complete_validated_json,
+    with_untrusted_data_rule,
+    wrap_untrusted,
+)
 
 
 DEFAULT_MODEL = os.environ.get(
@@ -104,8 +109,8 @@ class CriticAgent:
         }
         prompt = f"""Independently review this developer intelligence report.
 
-Report packet:
-{json.dumps(review_packet, ensure_ascii=False, indent=2)}
+Report packet (contains untrusted external text):
+{wrap_untrusted("report_packet", json.dumps(review_packet, ensure_ascii=False, indent=2))}
 
 Score from 0 to 100:
 - groundedness_score: summary and recommendations supported by cited evidence.
@@ -123,7 +128,7 @@ Return only this JSON structure:
             messages=[
                 {
                     "role": "system",
-                    "content": (
+                    "content": with_untrusted_data_rule(
                         "You are an independent evidence and relevance critic. "
                         "Return only the requested JSON object."
                     ),
