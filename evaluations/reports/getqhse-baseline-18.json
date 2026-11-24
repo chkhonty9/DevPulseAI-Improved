@@ -1,0 +1,259 @@
+{
+  "model": "qwen3.5:2b",
+  "case_count": 18,
+  "case_results": [
+    {
+      "case_id": "python-breaking-api",
+      "relevance_score": 85.0,
+      "expected_relevance_range": [
+        75.0,
+        100.0
+      ],
+      "relevance_agrees": true,
+      "risk_level": "LOW",
+      "expected_risk_level": "MEDIUM",
+      "risk_agrees": false,
+      "errors": []
+    },
+    {
+      "case_id": "spring-security-cve",
+      "relevance_score": 85.0,
+      "expected_relevance_range": [
+        85.0,
+        100.0
+      ],
+      "relevance_agrees": true,
+      "risk_level": "CRITICAL",
+      "expected_risk_level": "CRITICAL",
+      "risk_agrees": true,
+      "errors": []
+    },
+    {
+      "case_id": "javascript-deprecation",
+      "relevance_score": 85.0,
+      "expected_relevance_range": [
+        75.0,
+        100.0
+      ],
+      "relevance_agrees": true,
+      "risk_level": "LOW",
+      "expected_risk_level": "MEDIUM",
+      "risk_agrees": false,
+      "errors": []
+    },
+    {
+      "case_id": "rust-release-no-risk",
+      "relevance_score": 85.0,
+      "expected_relevance_range": [
+        60.0,
+        90.0
+      ],
+      "relevance_agrees": true,
+      "risk_level": "LOW",
+      "expected_risk_level": "LOW",
+      "risk_agrees": true,
+      "errors": []
+    },
+    {
+      "case_id": "rust-off-profile",
+      "relevance_score": 30.0,
+      "expected_relevance_range": [
+        0.0,
+        35.0
+      ],
+      "relevance_agrees": true,
+      "risk_level": "LOW",
+      "expected_risk_level": "LOW",
+      "risk_agrees": true,
+      "errors": []
+    },
+    {
+      "case_id": "rag-paper",
+      "relevance_score": null,
+      "expected_relevance_range": [
+        75.0,
+        100.0
+      ],
+      "relevance_agrees": null,
+      "risk_level": "LOW",
+      "expected_risk_level": "LOW",
+      "risk_agrees": true,
+      "errors": [
+        "Relevance analysis for 'Improving retrieval for production RAG' failed after one correction attempt: matched values must come exactly from the developer profile. No heuristic result was substituted."
+      ]
+    },
+    {
+      "case_id": "mobile-paper-off-profile",
+      "relevance_score": 30.0,
+      "expected_relevance_range": [
+        0.0,
+        30.0
+      ],
+      "relevance_agrees": true,
+      "risk_level": "LOW",
+      "expected_risk_level": "LOW",
+      "risk_agrees": true,
+      "errors": []
+    },
+    {
+      "case_id": "postgres-removal",
+      "relevance_score": 85.0,
+      "expected_relevance_range": [
+        80.0,
+        100.0
+      ],
+      "relevance_agrees": true,
+      "risk_level": "LOW",
+      "expected_risk_level": "HIGH",
+      "risk_agrees": false,
+      "errors": []
+    },
+    {
+      "case_id": "kubernetes-vulnerability",
+      "relevance_score": 85.0,
+      "expected_relevance_range": [
+        85.0,
+        100.0
+      ],
+      "relevance_agrees": true,
+      "risk_level": "HIGH",
+      "expected_risk_level": "HIGH",
+      "risk_agrees": true,
+      "errors": []
+    },
+    {
+      "case_id": "css-library",
+      "relevance_score": 85.0,
+      "expected_relevance_range": [
+        55.0,
+        90.0
+      ],
+      "relevance_agrees": true,
+      "risk_level": "LOW",
+      "expected_risk_level": "LOW",
+      "risk_agrees": true,
+      "errors": []
+    },
+    {
+      "case_id": "dotnet-breaking-change",
+      "relevance_score": 85.0,
+      "expected_relevance_range": [
+        80.0,
+        100.0
+      ],
+      "relevance_agrees": true,
+      "risk_level": "MEDIUM",
+      "expected_risk_level": "HIGH",
+      "risk_agrees": false,
+      "errors": []
+    },
+    {
+      "case_id": "llm-model-release",
+      "relevance_score": 65.0,
+      "expected_relevance_range": [
+        70.0,
+        100.0
+      ],
+      "relevance_agrees": false,
+      "risk_level": "LOW",
+      "expected_risk_level": "LOW",
+      "risk_agrees": true,
+      "errors": []
+    },
+    {
+      "case_id": "go-cli-release",
+      "relevance_score": 85.0,
+      "expected_relevance_range": [
+        60.0,
+        90.0
+      ],
+      "relevance_agrees": true,
+      "risk_level": "LOW",
+      "expected_risk_level": "LOW",
+      "risk_agrees": true,
+      "errors": []
+    },
+    {
+      "case_id": "react-security-fix",
+      "relevance_score": 95.0,
+      "expected_relevance_range": [
+        85.0,
+        100.0
+      ],
+      "relevance_agrees": true,
+      "risk_level": "HIGH",
+      "expected_risk_level": "HIGH",
+      "risk_agrees": true,
+      "errors": []
+    },
+    {
+      "case_id": "docker-docs",
+      "relevance_score": 85.0,
+      "expected_relevance_range": [
+        55.0,
+        90.0
+      ],
+      "relevance_agrees": true,
+      "risk_level": "LOW",
+      "expected_risk_level": "LOW",
+      "risk_agrees": true,
+      "errors": []
+    },
+    {
+      "case_id": "terraform-provider-deprecation",
+      "relevance_score": 95.0,
+      "expected_relevance_range": [
+        80.0,
+        100.0
+      ],
+      "relevance_agrees": true,
+      "risk_level": "LOW",
+      "expected_risk_level": "MEDIUM",
+      "risk_agrees": false,
+      "errors": []
+    },
+    {
+      "case_id": "php-package-off-profile",
+      "relevance_score": 30.0,
+      "expected_relevance_range": [
+        0.0,
+        30.0
+      ],
+      "relevance_agrees": true,
+      "risk_level": "LOW",
+      "expected_risk_level": "LOW",
+      "risk_agrees": true,
+      "errors": []
+    },
+    {
+      "case_id": "fastapi-feature",
+      "relevance_score": 85.0,
+      "expected_relevance_range": [
+        75.0,
+        100.0
+      ],
+      "relevance_agrees": true,
+      "risk_level": "LOW",
+      "expected_risk_level": "LOW",
+      "risk_agrees": true,
+      "errors": []
+    }
+  ],
+  "metrics": {
+    "relevance_agreement_percent": 94.12,
+    "risk_agreement_percent": 72.22,
+    "invalid_output_percent": 4.65,
+    "request_error_count": 0,
+    "groundedness_percent": 100.0,
+    "model_call_count": 43,
+    "latency_ms_total": 295461,
+    "prompt_tokens": 13102,
+    "completion_tokens": 4140,
+    "total_tokens": 17242,
+    "estimated_cost_usd": null,
+    "revision_attempts": 2,
+    "revision_success_percent": 0.0
+  },
+  "pipeline_status": "needs_review",
+  "pipeline_error": null
+}

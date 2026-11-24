@@ -1,137 +1,238 @@
-"""
-Risk Agent — Assesses security risks and breaking changes.
+"""AI risk analysis for technical signals."""
 
-This agent uses LLM reasoning to analyze signals for potential risks
-including security vulnerabilities, breaking API changes, and deprecation
-notices. It's a legitimate agent because risk assessment requires
-contextual understanding of technical implications.
+from __future__ import annotations
 
-Model Selection:
-    Uses a structured-reasoning model (gpt-4.1-mini by default) because
-    risk assessment benefits from careful, step-by-step analysis. For
-    production workloads with high-stakes decisions, consider upgrading
-    to gpt-4.1 or o4-mini via the MODEL_RISK environment variable.
-"""
-
-import json
-from typing import Dict, Any, List
-from agno.agent import Agent
-from agno.models.openai import OpenAIChat
-
-# Central model config — override via MODEL_RISK env var
 import os
-DEFAULT_MODEL = os.environ.get("MODEL_RISK", "gpt-4.1-mini")
+import re
+from typing import Any, Dict, List, Mapping, Optional, Sequence
+
+from pydantic import ValidationError
+
+from config import DEFAULT_GETQHSE_MODEL, resolve_getqhse_settings
+from models import RiskResult, Signal, format_validation_error, validate_contract
+from services import GetQHSEClient, LLMClient
+from .reasoning import AgentOutputError, complete_validated_json
+
+
+DEFAULT_MODEL = os.environ.get(
+    "MODEL_RISK",
+    os.environ.get("GETQHSE_MODEL", DEFAULT_GETQHSE_MODEL),
+)
 
 
 class RiskAgent:
-    """
-    Agent that assesses risk levels in technical signals.
+    """Assess technical risk using the selected AI model client."""
 
-    Why this IS an agent:
-        Risk assessment requires reasoning about technical implications,
-        understanding security contexts, and making judgment calls about
-        severity. This is inherently a reasoning task.
+    RISK_LEVELS = {"LOW", "MEDIUM", "HIGH", "CRITICAL"}
+    SENSITIVE_IDENTIFIER_PATTERNS = (
+        re.compile(r"\bCVE-\d{4}-\d{4,7}\b", re.IGNORECASE),
+        re.compile(r"\bv?\d+\.\d+(?:\.\d+)?(?:[-+][A-Za-z0-9.-]+)?\b"),
+    )
+    MIGRATION_REQUIREMENT_PATTERN = re.compile(
+        r"\b(?:must|required|mandatory)\b.{0,40}\b(?:migrat\w*|upgrad\w*)\b",
+        re.IGNORECASE,
+    )
 
-    Responsibilities:
-    - Identify security vulnerabilities
-    - Flag breaking changes
-    - Detect deprecation notices
-    - Rate overall risk level (LOW / MEDIUM / HIGH / CRITICAL)
-    """
-
-    RISK_LEVELS = ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
-
-    def __init__(self, model_id: str = None):
-        """
-        Initialize the Risk Agent.
-
-        Args:
-            model_id: OpenAI model to use. Defaults to gpt-4.1-mini.
-        """
+    def __init__(
+        self,
+        model_id: Optional[str] = None,
+        llm_client: Optional[LLMClient] = None,
+    ):
         self.model_id = model_id or DEFAULT_MODEL
-        self.agent = Agent(
-            name="Risk Assessor",
-            model=OpenAIChat(id=self.model_id),
-            role="Assesses security and breaking change risks in technical signals",
-            instructions=[
-                "Analyze signals for security vulnerabilities.",
-                "Identify breaking changes that may affect developers.",
-                "Flag deprecation notices and migration requirements.",
-                "Rate risk level: LOW, MEDIUM, HIGH, or CRITICAL.",
-            ],
-            markdown=True,
-        )
+        self.llm_client = llm_client
+
+    def _get_llm_client(self) -> LLMClient:
+        if self.llm_client is None:
+            settings = resolve_getqhse_settings(model=self.model_id)
+            self.llm_client = GetQHSEClient(settings)
+        return self.llm_client
 
     def assess(self, signal: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Assess risk level of a signal.
+        """Return a validated AI assessment or raise a visible error."""
+        validated_signal = validate_contract(
+            Signal,
+            signal,
+            context="Risk agent input signal",
+        )
+        signal = validated_signal.model_dump(mode="python", exclude_none=True)
+        prompt = f"""Analyze only the explicit risk facts in this source text.
 
-        Attempts LLM assessment first, falls back to keyword heuristics.
-        """
-        prompt = f"""Analyze this technical signal for risks:
+Source: {signal.get('source', 'unknown')}
+Title: {signal.get('title', 'Untitled')}
+Description: {signal.get('description', '')[:500]}
 
-Signal:
-- Source: {signal.get('source', 'unknown')}
-- Title: {signal.get('title', 'Untitled')}
-- Description: {signal.get('description', '')[:500]}
+Return exactly five keys: risk_level, concerns, evidence_quotes,
+recommended_actions, breaking_changes. Do not add any other key.
 
-Assess for:
-1. Security vulnerabilities
-2. Breaking changes
-3. Deprecations
+If the title and description do not explicitly state a vulnerability,
+breaking or incompatible change, removal, or deprecation, return exactly:
+{{"risk_level":"LOW","concerns":[],"evidence_quotes":[],"recommended_actions":[],"breaking_changes":false}}
 
-Respond with ONLY a JSON object:
-{{"risk_level": "LOW|MEDIUM|HIGH|CRITICAL", "concerns": ["<list of concerns>"], "breaking_changes": true|false}}"""
+Otherwise, use LOW, MEDIUM, HIGH, or CRITICAL for risk_level. Every concern
+must have one matching evidence quote copied from the source text and one
+conservative action. All three fields are arrays of plain JSON strings, never
+objects. Do not invent identifiers, versions, or requirements.
 
-        try:
-            response = self.agent.run(prompt, stream=False)
-            return self._parse_response(response.content, signal)
-        except Exception as e:
-            return self._fallback_assessment(signal, str(e))
+Return one JSON object only."""
+
+        return complete_validated_json(
+            llm_client=self._get_llm_client(),
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Assess only explicit technical risk facts. The only "
+                        "allowed top-level keys are risk_level, concerns, "
+                        "evidence_quotes, recommended_actions, and "
+                        "breaking_changes. Return JSON only."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
+            validator=lambda payload: self._validate_response(payload, signal),
+            task_name=(
+                "Risk analysis for "
+                f"'{str(signal.get('title', 'Untitled'))[:80]}'"
+            ),
+            model=self.model_id,
+            temperature=0.0,
+            max_tokens=650,
+        )
 
     def assess_batch(self, signals: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Assess multiple signals, returning each with a 'risk' key."""
-        assessed = []
-        for signal in signals:
-            result = self.assess(signal)
-            assessed.append({**signal, "risk": result})
-        return assessed
+        """Assess multiple signals and stop immediately on an AI failure."""
+        return [{**signal, "risk": self.assess(signal)} for signal in signals]
 
-    def _parse_response(self, content: str, signal: Dict) -> Dict[str, Any]:
-        """Parse LLM JSON response into structured output."""
+    @classmethod
+    def _validate_response(
+        cls,
+        payload: Dict[str, Any],
+        signal: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        payload = cls._normalize_unambiguous_string_wrappers(payload)
         try:
-            text = content.strip()
-            if "```" in text:
-                text = text.split("```")[1].replace("json", "").strip()
-            return json.loads(text)
-        except (json.JSONDecodeError, IndexError):
-            return self._fallback_assessment(signal, "Parse error")
+            result = RiskResult.model_validate(payload)
+        except ValidationError as exc:
+            raise AgentOutputError(format_validation_error(exc)) from exc
 
-    def _fallback_assessment(self, signal: Dict, error: str) -> Dict[str, Any]:
+        source_text = " ".join(
+            [
+                str(signal.get("title", "")),
+                str(signal.get("description", "")),
+            ]
+        )
+        normalized_source = cls._normalize_text(source_text)
+        for quote in result.evidence_quotes:
+            if cls._normalize_text(quote) not in normalized_source:
+                raise AgentOutputError(
+                    "every evidence quote must appear exactly in the signal text"
+                )
+
+        generated_claims = " ".join(
+            [*result.concerns, *result.recommended_actions]
+        )
+        for pattern in cls.SENSITIVE_IDENTIFIER_PATTERNS:
+            for identifier in pattern.findall(generated_claims):
+                if identifier.casefold() not in source_text.casefold():
+                    raise AgentOutputError(
+                        f"unsupported identifier or version: {identifier}"
+                    )
+
+        if (
+            cls.MIGRATION_REQUIREMENT_PATTERN.search(generated_claims)
+            and not cls.MIGRATION_REQUIREMENT_PATTERN.search(source_text)
+        ):
+            raise AgentOutputError(
+                "migration or upgrade requirements must be explicit in the source"
+            )
+
+        if result.breaking_changes:
+            breaking_markers = (
+                "breaking",
+                "incompatible",
+                "deprecat",
+                "remove",
+                "no longer",
+            )
+            if not any(marker in normalized_source for marker in breaking_markers):
+                raise AgentOutputError(
+                    "breaking_changes cannot be true without explicit source evidence"
+                )
+        return result.model_dump(mode="json")
+
+    @classmethod
+    def _normalize_unambiguous_string_wrappers(
+        cls,
+        payload: Mapping[str, Any],
+    ) -> Dict[str, Any]:
+        """Unwrap common model-produced objects without inventing content.
+
+        Small models sometimes return ``[{"text": "..."}]`` where the public
+        contract requires ``["..."]``. We unwrap only a single recognized,
+        non-empty string value. Ambiguous objects are left untouched so strict
+        Pydantic validation still rejects them and triggers one correction.
         """
-        Keyword-based fallback when LLM is unavailable.
+        normalized = dict(payload)
 
-        Simple heuristic: scan title for risk-indicating keywords.
-        This is intentionally conservative — better to over-flag than miss.
-        """
-        title = signal.get("title", "").lower()
+        # Canonicalize the model's own LOW/no-breaking decision. Small models
+        # sometimes append speculative concerns or category fields even after
+        # selecting LOW. Removing those unsupported additions is safer than
+        # displaying them and preserves the model's actual classification.
+        if (
+            normalized.get("risk_level") == "LOW"
+            and normalized.get("breaking_changes") is False
+        ):
+            return {
+                "risk_level": "LOW",
+                "concerns": [],
+                "evidence_quotes": [],
+                "recommended_actions": [],
+                "breaking_changes": False,
+            }
 
-        risk_level = "LOW"
-        concerns = []
-
-        risk_keywords = {
-            "HIGH": ["vulnerability", "exploit", "cve", "critical", "breach"],
-            "MEDIUM": ["breaking", "deprecated", "removed", "migration"],
+        field_aliases = {
+            "concerns": ("concern", "text", "description", "issue", "risk"),
+            "evidence_quotes": (
+                "evidence_quote",
+                "quote",
+                "evidence",
+                "text",
+            ),
+            "recommended_actions": (
+                "recommended_action",
+                "action",
+                "recommendation",
+                "text",
+            ),
         }
 
-        for level, keywords in risk_keywords.items():
-            if any(kw in title for kw in keywords):
-                risk_level = level
-                concerns.append(f"Keyword match: {level}")
-                break
+        for field_name, aliases in field_aliases.items():
+            values = normalized.get(field_name)
+            if not isinstance(values, list):
+                continue
+            normalized[field_name] = [
+                cls._unwrap_string_item(value, aliases) for value in values
+            ]
+        return normalized
 
-        return {
-            "risk_level": risk_level,
-            "concerns": concerns or [f"Heuristic (LLM unavailable: {error})"],
-            "breaking_changes": "breaking" in title,
+    @staticmethod
+    def _unwrap_string_item(
+        value: Any,
+        aliases: Sequence[str],
+    ) -> Any:
+        if not isinstance(value, dict):
+            return value
+
+        candidates = {
+            candidate.strip()
+            for alias in aliases
+            if isinstance((candidate := value.get(alias)), str)
+            and candidate.strip()
         }
+        if len(candidates) == 1:
+            return candidates.pop()
+        return value
+
+    @staticmethod
+    def _normalize_text(value: str) -> str:
+        return " ".join(value.casefold().split())

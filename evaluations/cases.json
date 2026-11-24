@@ -1,0 +1,110 @@
+[
+  {
+    "id": "python-breaking-api",
+    "signal": {"id": "eval-01", "source": "github", "title": "Python framework removes legacy API", "description": "Version 4.0 removes the legacy client API and requires migration before upgrading.", "url": "https://example.com/eval-01", "metadata": {}, "collected_at": "2026-01-15T10:00:00Z"},
+    "profile": {"technologies": ["Python"], "interests": ["Framework upgrades"], "experience_level": "advanced"},
+    "expected": {"relevance_min": 75, "relevance_max": 100, "risk_level": "MEDIUM", "breaking_changes": true}
+  },
+  {
+    "id": "spring-security-cve",
+    "signal": {"id": "eval-02", "source": "github", "title": "Spring Security advisory CVE-2026-12345", "description": "CVE-2026-12345 is a critical authentication bypass affecting Spring Security 7.1.0.", "url": "https://example.com/eval-02", "metadata": {}, "collected_at": "2026-01-15T10:01:00Z"},
+    "profile": {"technologies": ["Java", "Spring Boot"], "interests": ["Application security"], "experience_level": "advanced"},
+    "expected": {"relevance_min": 85, "relevance_max": 100, "risk_level": "CRITICAL", "breaking_changes": false}
+  },
+  {
+    "id": "javascript-deprecation",
+    "signal": {"id": "eval-03", "source": "hackernews", "title": "Node.js deprecates legacy loader", "description": "Node.js deprecates the legacy module loader; it will be removed in the next major release.", "url": "https://example.com/eval-03", "metadata": {}, "collected_at": "2026-01-15T10:02:00Z"},
+    "profile": {"technologies": ["JavaScript", "Node.js"], "interests": ["Runtime tooling"], "experience_level": "intermediate"},
+    "expected": {"relevance_min": 75, "relevance_max": 100, "risk_level": "MEDIUM", "breaking_changes": true}
+  },
+  {
+    "id": "rust-release-no-risk",
+    "signal": {"id": "eval-04", "source": "github", "title": "New Rust formatter released", "description": "A faster formatter for Rust projects with configurable style rules.", "url": "https://example.com/eval-04", "metadata": {}, "collected_at": "2026-01-15T10:03:00Z"},
+    "profile": {"technologies": ["Rust"], "interests": ["Developer tooling"], "experience_level": "intermediate"},
+    "expected": {"relevance_min": 60, "relevance_max": 90, "risk_level": "LOW", "breaking_changes": false}
+  },
+  {
+    "id": "rust-off-profile",
+    "signal": {"id": "eval-05", "source": "github", "title": "New Rust formatter released", "description": "A faster formatter for Rust projects with configurable style rules.", "url": "https://example.com/eval-05", "metadata": {}, "collected_at": "2026-01-15T10:04:00Z"},
+    "profile": {"technologies": ["Java", "Spring Boot"], "interests": ["Enterprise APIs"], "experience_level": "intermediate"},
+    "expected": {"relevance_min": 0, "relevance_max": 35, "risk_level": "LOW", "breaking_changes": false}
+  },
+  {
+    "id": "rag-paper",
+    "signal": {"id": "eval-06", "source": "arxiv", "title": "Improving retrieval for production RAG", "description": "A study of retrieval quality and evaluation methods for retrieval-augmented generation.", "url": "https://example.com/eval-06", "metadata": {}, "collected_at": "2026-01-15T10:05:00Z"},
+    "profile": {"technologies": ["Python"], "interests": ["RAG", "LLM evaluation"], "experience_level": "advanced"},
+    "expected": {"relevance_min": 75, "relevance_max": 100, "risk_level": "LOW", "breaking_changes": false}
+  },
+  {
+    "id": "mobile-paper-off-profile",
+    "signal": {"id": "eval-07", "source": "arxiv", "title": "Energy-aware routing for mobile networks", "description": "A routing optimization method for cellular base stations.", "url": "https://example.com/eval-07", "metadata": {}, "collected_at": "2026-01-15T10:06:00Z"},
+    "profile": {"technologies": ["Python", "FastAPI"], "interests": ["LLM agents"], "experience_level": "intermediate"},
+    "expected": {"relevance_min": 0, "relevance_max": 30, "risk_level": "LOW", "breaking_changes": false}
+  },
+  {
+    "id": "postgres-removal",
+    "signal": {"id": "eval-08", "source": "hackernews", "title": "PostgreSQL removes obsolete authentication mode", "description": "The obsolete authentication mode is removed and existing deployments must migrate before upgrading.", "url": "https://example.com/eval-08", "metadata": {}, "collected_at": "2026-01-15T10:07:00Z"},
+    "profile": {"technologies": ["PostgreSQL", "Python"], "interests": ["Database operations"], "experience_level": "advanced"},
+    "expected": {"relevance_min": 80, "relevance_max": 100, "risk_level": "HIGH", "breaking_changes": true}
+  },
+  {
+    "id": "kubernetes-vulnerability",
+    "signal": {"id": "eval-09", "source": "github", "title": "Kubernetes privilege escalation advisory", "description": "A high-severity privilege escalation vulnerability affects Kubernetes 1.34.2.", "url": "https://example.com/eval-09", "metadata": {}, "collected_at": "2026-01-15T10:08:00Z"},
+    "profile": {"technologies": ["Kubernetes", "Go"], "interests": ["Cloud security"], "experience_level": "advanced"},
+    "expected": {"relevance_min": 85, "relevance_max": 100, "risk_level": "HIGH", "breaking_changes": false}
+  },
+  {
+    "id": "css-library",
+    "signal": {"id": "eval-10", "source": "github", "title": "Minimal CSS animation library", "description": "A collection of lightweight animations for web interfaces.", "url": "https://example.com/eval-10", "metadata": {}, "collected_at": "2026-01-15T10:09:00Z"},
+    "profile": {"technologies": ["React", "CSS"], "interests": ["Frontend design systems"], "experience_level": "beginner"},
+    "expected": {"relevance_min": 55, "relevance_max": 90, "risk_level": "LOW", "breaking_changes": false}
+  },
+  {
+    "id": "dotnet-breaking-change",
+    "signal": {"id": "eval-11", "source": "medium", "title": ".NET serializer breaking change", "description": "The new serializer is incompatible with the legacy payload format and requires migration.", "url": "https://example.com/eval-11", "metadata": {}, "collected_at": "2026-01-15T10:10:00Z"},
+    "profile": {"technologies": ["C#", ".NET"], "interests": ["API compatibility"], "experience_level": "intermediate"},
+    "expected": {"relevance_min": 80, "relevance_max": 100, "risk_level": "HIGH", "breaking_changes": true}
+  },
+  {
+    "id": "llm-model-release",
+    "signal": {"id": "eval-12", "source": "huggingface", "title": "Small multilingual embedding model", "description": "A multilingual embedding model optimized for semantic search.", "url": "https://example.com/eval-12", "metadata": {}, "collected_at": "2026-01-15T10:11:00Z"},
+    "profile": {"technologies": ["Python"], "interests": ["Embeddings", "Semantic search"], "experience_level": "intermediate"},
+    "expected": {"relevance_min": 70, "relevance_max": 100, "risk_level": "LOW", "breaking_changes": false}
+  },
+  {
+    "id": "go-cli-release",
+    "signal": {"id": "eval-13", "source": "github", "title": "Go CLI configuration helper", "description": "A typed configuration library for command-line applications written in Go.", "url": "https://example.com/eval-13", "metadata": {}, "collected_at": "2026-01-15T10:12:00Z"},
+    "profile": {"technologies": ["Go"], "interests": ["CLI tooling"], "experience_level": "beginner"},
+    "expected": {"relevance_min": 60, "relevance_max": 90, "risk_level": "LOW", "breaking_changes": false}
+  },
+  {
+    "id": "react-security-fix",
+    "signal": {"id": "eval-14", "source": "hackernews", "title": "React server component security fix", "description": "A high-severity injection vulnerability affects React server components 20.0.0.", "url": "https://example.com/eval-14", "metadata": {}, "collected_at": "2026-01-15T10:13:00Z"},
+    "profile": {"technologies": ["React", "TypeScript"], "interests": ["Web security"], "experience_level": "advanced"},
+    "expected": {"relevance_min": 85, "relevance_max": 100, "risk_level": "HIGH", "breaking_changes": false}
+  },
+  {
+    "id": "docker-docs",
+    "signal": {"id": "eval-15", "source": "medium", "title": "Docker Compose tutorial", "description": "A beginner tutorial for running a local multi-container development environment.", "url": "https://example.com/eval-15", "metadata": {}, "collected_at": "2026-01-15T10:14:00Z"},
+    "profile": {"technologies": ["Docker"], "interests": ["Local development"], "experience_level": "beginner"},
+    "expected": {"relevance_min": 55, "relevance_max": 90, "risk_level": "LOW", "breaking_changes": false}
+  },
+  {
+    "id": "terraform-provider-deprecation",
+    "signal": {"id": "eval-16", "source": "github", "title": "Terraform provider deprecates resource", "description": "The legacy cloud_instance resource is deprecated and will be removed in provider 9.0.0.", "url": "https://example.com/eval-16", "metadata": {}, "collected_at": "2026-01-15T10:15:00Z"},
+    "profile": {"technologies": ["Terraform"], "interests": ["Cloud infrastructure"], "experience_level": "advanced"},
+    "expected": {"relevance_min": 80, "relevance_max": 100, "risk_level": "MEDIUM", "breaking_changes": true}
+  },
+  {
+    "id": "php-package-off-profile",
+    "signal": {"id": "eval-17", "source": "github", "title": "PHP template package", "description": "A template rendering package for PHP applications.", "url": "https://example.com/eval-17", "metadata": {}, "collected_at": "2026-01-15T10:16:00Z"},
+    "profile": {"technologies": ["Python", "Django"], "interests": ["Data APIs"], "experience_level": "intermediate"},
+    "expected": {"relevance_min": 0, "relevance_max": 30, "risk_level": "LOW", "breaking_changes": false}
+  },
+  {
+    "id": "fastapi-feature",
+    "signal": {"id": "eval-18", "source": "github", "title": "FastAPI observability extension", "description": "An extension adding OpenTelemetry traces and metrics to FastAPI services.", "url": "https://example.com/eval-18", "metadata": {}, "collected_at": "2026-01-15T10:17:00Z"},
+    "profile": {"technologies": ["Python", "FastAPI"], "interests": ["Observability"], "experience_level": "intermediate"},
+    "expected": {"relevance_min": 75, "relevance_max": 100, "risk_level": "LOW", "breaking_changes": false}
+  }
+]

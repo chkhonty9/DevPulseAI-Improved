@@ -13,9 +13,14 @@ Expected output:
 Runs in <1s on any machine.
 """
 
+import json
+import re
 import sys
 import time
 from typing import List, Dict, Any
+
+from services import LLMResult
+from models import DeveloperProfile
 
 # ────────────────────────────────────────────────
 # Mock signal data — representative of real adapter output
@@ -64,15 +69,83 @@ MOCK_SIGNALS = [
 ]
 
 
+class MockLLMClient:
+    """Deterministic test double that exercises the real agent code paths."""
+
+    def complete_json(self, messages, **kwargs):
+        system_prompt = messages[0]["content"]
+        user_prompt = messages[-1]["content"]
+
+        if "score technical signals" in system_prompt:
+            payload = {
+                "score": 78,
+                "matched_technologies": ["Python"],
+                "matched_interests": ["AI agents"],
+                "reasoning": "Mock AI response for pipeline verification.",
+                "actionability": "HIGH",
+            }
+        elif "independent evidence and relevance critic" in system_prompt:
+            payload = {
+                "groundedness_score": 94.0,
+                "profile_relevance_score": 88.0,
+                "completeness_score": 86.0,
+                "unsupported_claims": [],
+                "feedback": ["Keep evidence citations visible."],
+            }
+        elif "synthesize developer intelligence" in system_prompt:
+            evidence_ids = list(
+                dict.fromkeys(re.findall(r"EV-[A-F0-9]{12}", user_prompt))
+            )
+            payload = {
+                "executive_summary": (
+                    "The assessed signals contain relevant developer updates "
+                    "and one compatibility concern."
+                ),
+                "summary_evidence_ids": evidence_ids[:2],
+                "priority_evidence_ids": evidence_ids[:3],
+                "recommendations": [
+                    {
+                        "text": "Review the highest-priority compatibility signal.",
+                        "evidence_ids": [evidence_ids[0]],
+                    }
+                ],
+            }
+        else:
+            breaking = "Title: GPT-5 Breaking Changes in API" in user_prompt
+            payload = {
+                "risk_level": "MEDIUM" if breaking else "LOW",
+                "concerns": ["Potential compatibility impact"] if breaking else [],
+                "evidence_quotes": ["breaking changes"] if breaking else [],
+                "recommended_actions": (
+                    ["Review compatibility impact before updating."]
+                    if breaking
+                    else []
+                ),
+                "breaking_changes": breaking,
+            }
+
+        return LLMResult(
+            content=json.dumps(payload),
+            model=kwargs.get("model") or "mock/model",
+            latency_ms=1,
+        )
+
+
 # ────────────────────────────────────────────────
 # Verification steps
 # ────────────────────────────────────────────────
 
 def verify_imports():
     """Verify all modules can be imported without errors."""
-    print("[1/5] Verifying imports...")
+    print("[1/6] Verifying imports...")
 
-    from agents import SignalCollector, RelevanceAgent, RiskAgent, SynthesisAgent
+    from agents import (
+        CriticAgent,
+        RelevanceAgent,
+        RiskAgent,
+        SignalCollector,
+        SynthesisAgent,
+    )
     from adapters.github import fetch_github_trending
     from adapters.arxiv import fetch_arxiv_papers
     from adapters.hackernews import fetch_hackernews_stories
@@ -93,7 +166,7 @@ def verify_imports():
 
 def verify_signal_collector():
     """Verify SignalCollector normalizes and deduplicates correctly."""
-    print("[2/5] Verifying Signal Collector (utility)...")
+    print("[2/6] Verifying Signal Collector (utility)...")
 
     from agents import SignalCollector
 
@@ -116,44 +189,40 @@ def verify_signal_collector():
 
 
 def verify_relevance_agent(signals: List[Dict]):
-    """Verify RelevanceAgent fallback scoring works without API key."""
-    print("[3/5] Verifying Relevance Agent (fallback mode)...")
+    """Verify the actual RelevanceAgent path with mocked AI responses."""
+    print("[3/6] Verifying Relevance Agent (mock AI)...")
 
     from agents import RelevanceAgent
 
-    agent = RelevanceAgent()
-
-    # Use fallback scoring directly (no API key needed)
-    scored = []
-    for signal in signals:
-        result = agent._fallback_score(signal, "Mock mode")
-        scored.append({**signal, "relevance": result})
+    agent = RelevanceAgent(model_id="mock/model", llm_client=MockLLMClient())
+    profile = DeveloperProfile(
+        technologies=["Python"],
+        interests=["AI agents"],
+        experience_level="intermediate",
+    )
+    scored = agent.score_batch(signals, profile)
 
     assert all("relevance" in s for s in scored), "Missing relevance scores"
     assert all(
         0 <= s["relevance"]["score"] <= 100 for s in scored
     ), "Scores out of range"
 
-    print(f"  ✓ Scored {len(scored)} signals (heuristic fallback)")
+    print(f"  ✓ Scored {len(scored)} signals through the agent's AI path")
     return scored
 
 
 def verify_risk_agent(signals: List[Dict]):
-    """Verify RiskAgent fallback assessment works without API key."""
-    print("[4/5] Verifying Risk Agent (fallback mode)...")
+    """Verify the actual RiskAgent path with mocked AI responses."""
+    print("[4/6] Verifying Risk Agent (mock AI)...")
 
     from agents import RiskAgent
 
-    agent = RiskAgent()
-
-    assessed = []
-    for signal in signals:
-        result = agent._fallback_assessment(signal, "Mock mode")
-        assessed.append({**signal, "risk": result})
+    agent = RiskAgent(model_id="mock/model", llm_client=MockLLMClient())
+    assessed = agent.assess_batch(signals)
 
     assert all("risk" in s for s in assessed), "Missing risk assessments"
 
-    # Verify keyword detection: "GPT-5 Breaking Changes" should flag
+    # The mock model flags the supplied "Breaking Changes" signal.
     breaking = [s for s in assessed if s.get("risk", {}).get("breaking_changes")]
     assert len(breaking) >= 1, "Breaking change detection failed"
 
@@ -163,21 +232,54 @@ def verify_risk_agent(signals: List[Dict]):
 
 def verify_synthesis_agent(signals: List[Dict]):
     """Verify SynthesisAgent produces valid digest structure."""
-    print("[5/5] Verifying Synthesis Agent...")
+    print("[5/6] Verifying Synthesis Agent...")
 
     from agents import SynthesisAgent
 
-    agent = SynthesisAgent()
+    agent = SynthesisAgent(model_id="mock/model", llm_client=MockLLMClient())
     digest = agent.synthesize(signals)
 
     assert "generated_at" in digest, "Missing timestamp"
     assert "executive_summary" in digest, "Missing summary"
     assert "recommendations" in digest, "Missing recommendations"
     assert "priority_signals" in digest, "Missing priority signals"
+    assert "evidence_pack" in digest, "Missing evidence pack"
     assert digest["total_signals"] == len(signals), "Signal count mismatch"
+    known_ids = {item["evidence_id"] for item in digest["evidence_pack"]}
+    assert set(digest["summary_evidence_ids"]) <= known_ids
+    assert all(
+        recommendation["evidence_ids"]
+        and set(recommendation["evidence_ids"]) <= known_ids
+        for recommendation in digest["recommendations"]
+    ), "Recommendation citations are invalid"
 
     print(f"  ✓ Generated digest with {len(digest['recommendations'])} recommendations")
     return digest
+
+
+def verify_critic_agent(digest: Dict[str, Any]):
+    """Verify the independent AI critic and deterministic checks."""
+    print("[6/6] Verifying Independent Critic...")
+
+    from agents import CriticAgent
+
+    profile = DeveloperProfile(
+        technologies=["Python"],
+        interests=["AI agents"],
+        experience_level="intermediate",
+    )
+    critic = CriticAgent(model_id="mock/model", llm_client=MockLLMClient())
+    result = critic.review(digest, profile)
+
+    assert result["passed"], "Valid digest should pass the mock critic"
+    assert result["groundedness_score"] >= 70
+    assert not result["unsupported_claims"]
+
+    print(
+        "  ✓ Critic passed with groundedness "
+        f"{result['groundedness_score']:.0f}/100"
+    )
+    return result
 
 
 # ────────────────────────────────────────────────
@@ -201,6 +303,7 @@ def run_verification():
         scored = verify_relevance_agent(normalized)
         assessed = verify_risk_agent(scored)
         digest = verify_synthesis_agent(assessed)
+        critic = verify_critic_agent(digest)
 
         elapsed = time.time() - start
 
@@ -211,6 +314,10 @@ def run_verification():
         print(f"  • Signals processed:  {digest['total_signals']}")
         print(f"  • Summary:            {digest['executive_summary']}")
         print(f"  • Recommendations:    {len(digest['recommendations'])}")
+        print(
+            "  • Critic status:      "
+            + ("passed" if critic["passed"] else "needs review")
+        )
         print(f"  • Time elapsed:       {elapsed:.3f}s")
 
         print("\n" + "=" * 60)

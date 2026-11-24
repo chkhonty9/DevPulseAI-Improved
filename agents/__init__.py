@@ -7,13 +7,16 @@ This package contains the intelligence pipeline components:
   Signal collection is deterministic and intentionally not agent-driven.
 
 - RelevanceAgent: LLM agent — scores signals 0-100 for developer relevance.
-  Uses fast model (gpt-4.1-mini) for high-throughput classification.
+  Uses the shared provider-neutral model client.
 
 - RiskAgent: LLM agent — assesses security risks and breaking changes.
-  Uses structured-reasoning model (gpt-4.1-mini) for careful analysis.
+  Uses the shared provider-neutral model client.
 
-- SynthesisAgent: LLM agent — produces final intelligence digest.
-  Uses strongest model (gpt-4.1) for cross-referencing and summarization.
+- SynthesisAgent: generates an AI digest from an immutable evidence pack and
+  requires citations for the summary and every recommendation.
+
+- CriticAgent: independently scores the digest and performs deterministic
+  evidence/signal ID integrity checks.
 
 Design Principle:
     Agents are used ONLY where reasoning is required.
@@ -24,10 +27,15 @@ from .signal_collector import SignalCollector
 from .relevance_agent import RelevanceAgent
 from .risk_agent import RiskAgent
 from .synthesis_agent import SynthesisAgent
+from .critic_agent import CriticAgent
+from .reasoning import AnalysisFailedError, AgentOutputError
 
 __all__ = [
     "SignalCollector",
     "RelevanceAgent",
     "RiskAgent",
     "SynthesisAgent",
+    "CriticAgent",
+    "AnalysisFailedError",
+    "AgentOutputError",
 ]

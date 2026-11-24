@@ -1,0 +1,62 @@
+{
+  "model": "qwen3.5:2b",
+  "case_count": 3,
+  "case_results": [
+    {
+      "case_id": "python-breaking-api",
+      "relevance_score": 85.0,
+      "expected_relevance_range": [
+        75.0,
+        100.0
+      ],
+      "relevance_agrees": true,
+      "risk_level": "LOW",
+      "expected_risk_level": "MEDIUM",
+      "risk_agrees": false,
+      "errors": []
+    },
+    {
+      "case_id": "spring-security-cve",
+      "relevance_score": 85.0,
+      "expected_relevance_range": [
+        85.0,
+        100.0
+      ],
+      "relevance_agrees": true,
+      "risk_level": "CRITICAL",
+      "expected_risk_level": "CRITICAL",
+      "risk_agrees": true,
+      "errors": []
+    },
+    {
+      "case_id": "javascript-deprecation",
+      "relevance_score": 85.0,
+      "expected_relevance_range": [
+        75.0,
+        100.0
+      ],
+      "relevance_agrees": true,
+      "risk_level": "LOW",
+      "expected_risk_level": "MEDIUM",
+      "risk_agrees": false,
+      "errors": []
+    }
+  ],
+  "metrics": {
+    "relevance_agreement_percent": 100.0,
+    "risk_agreement_percent": 33.33,
+    "invalid_output_percent": 0.0,
+    "request_error_count": 0,
+    "groundedness_percent": 100.0,
+    "model_call_count": 12,
+    "latency_ms_total": 99809,
+    "prompt_tokens": 4941,
+    "completion_tokens": 1292,
+    "total_tokens": 6233,
+    "estimated_cost_usd": null,
+    "revision_attempts": 2,
+    "revision_success_percent": 0.0
+  },
+  "pipeline_status": "needs_review",
+  "pipeline_error": null
+}

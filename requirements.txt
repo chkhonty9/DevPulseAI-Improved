@@ -1,6 +1,7 @@
-# Baseline dependencies. Provider dependencies will be finalized in Stage 1.
-agno
-openai
+# OpenRouter uses the OpenAI-compatible Python client.
+openai>=2.0
+google-genai>=1.0
+pydantic>=2.0
 httpx
 feedparser
 streamlit>=1.30

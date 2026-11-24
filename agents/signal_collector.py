@@ -17,6 +17,8 @@ Design Decision:
 from typing import List, Dict, Any
 from datetime import datetime, timezone
 
+from models import Signal, validate_contract
+
 
 class SignalCollector:
     """
@@ -51,16 +53,22 @@ class SignalCollector:
                 continue
             seen_ids.add(signal_id)
 
-            # Normalize to unified schema
-            normalized.append({
+            # Normalize and validate the public Signal contract.
+            candidate = {
                 "id": signal.get("id", ""),
                 "source": signal.get("source", "unknown"),
                 "title": signal.get("title", "Untitled"),
                 "description": signal.get("description", ""),
                 "url": signal.get("url", ""),
                 "metadata": signal.get("metadata", {}),
-                "collected_at": datetime.now(timezone.utc).isoformat(),
-            })
+                "collected_at": datetime.now(timezone.utc),
+            }
+            validated = validate_contract(
+                Signal,
+                candidate,
+                context=f"Signal {signal_id!r}",
+            )
+            normalized.append(validated.model_dump(mode="python", exclude_none=True))
 
         return normalized
 

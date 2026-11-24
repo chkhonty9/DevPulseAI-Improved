@@ -1,75 +1,81 @@
-"""
-Relevance Agent — Scores signals by developer relevance (0–100).
+"""AI relevance analysis for technical signals."""
 
-This agent uses LLM reasoning to evaluate each signal's importance to
-AI/ML developers. It's a legitimate agent because relevance scoring
-requires judgment, context understanding, and nuanced assessment that
-pure heuristics cannot capture.
+from __future__ import annotations
 
-Model Selection:
-    Uses a fast, cost-efficient model (gpt-4.1-mini by default) because
-    relevance scoring is high-volume and doesn't require deep reasoning —
-    it's a classification task, not a synthesis task.
-"""
-
-import json
-from typing import Dict, Any, List
-from agno.agent import Agent
-from agno.models.openai import OpenAIChat
-
-# Central model config — override via MODEL_RELEVANCE env var
 import os
-DEFAULT_MODEL = os.environ.get("MODEL_RELEVANCE", "gpt-4.1-mini")
+from typing import Any, Dict, List, Mapping, Optional
+
+from pydantic import ValidationError
+
+from config import DEFAULT_GETQHSE_MODEL, resolve_getqhse_settings
+from models import (
+    DeveloperProfile,
+    RelevanceResult,
+    Signal,
+    format_validation_error,
+    validate_contract,
+)
+from services import GetQHSEClient, LLMClient
+from .reasoning import AgentOutputError, complete_validated_json
+
+
+DEFAULT_MODEL = os.environ.get(
+    "MODEL_RELEVANCE",
+    os.environ.get("GETQHSE_MODEL", DEFAULT_GETQHSE_MODEL),
+)
 
 
 class RelevanceAgent:
-    """
-    Agent that scores signals based on relevance to developers.
+    """Score signals from 0–100 using the selected AI model client."""
 
-    Why this IS an agent (unlike SignalCollector):
-        Relevance scoring requires understanding context, assessing novelty,
-        and making judgment calls about what matters to developers. This is
-        inherently a reasoning task that benefits from LLM capabilities.
-
-    Responsibilities:
-    - Score signals 0–100 based on developer relevance
-    - Provide reasoning for each score
-    - Gracefully fall back to heuristics when LLM unavailable
-    """
-
-    def __init__(self, model_id: str = None):
-        """
-        Initialize the Relevance Agent.
-
-        Args:
-            model_id: OpenAI model to use. Defaults to gpt-4.1-mini (fast, cheap).
-        """
+    def __init__(
+        self,
+        model_id: Optional[str] = None,
+        llm_client: Optional[LLMClient] = None,
+    ):
         self.model_id = model_id or DEFAULT_MODEL
-        self.agent = Agent(
-            name="Relevance Scorer",
-            model=OpenAIChat(id=self.model_id),
-            role="Scores technical signals based on developer relevance",
-            instructions=[
-                "Score each signal from 0-100 based on relevance.",
-                "Consider: novelty, impact, actionability, and timeliness.",
-                "Prioritize signals relevant to AI/ML engineers.",
-                "Provide brief reasoning for each score.",
-            ],
-            markdown=True,
+        self.llm_client = llm_client
+
+    def _get_llm_client(self) -> LLMClient:
+        if self.llm_client is None:
+            settings = resolve_getqhse_settings(model=self.model_id)
+            self.llm_client = GetQHSEClient(settings)
+        return self.llm_client
+
+    def score(
+        self,
+        signal: Dict[str, Any],
+        profile: DeveloperProfile | Mapping[str, Any],
+    ) -> Dict[str, Any]:
+        """Return a validated score personalized to a developer profile."""
+        validated_signal = validate_contract(
+            Signal,
+            signal,
+            context="Relevance agent input signal",
         )
+        signal = validated_signal.model_dump(mode="python", exclude_none=True)
+        if isinstance(profile, DeveloperProfile):
+            validated_profile = profile
+        else:
+            validated_profile = validate_contract(
+                DeveloperProfile,
+                profile,
+                context="Relevance developer profile",
+            )
 
-    def score(self, signal: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Score a single signal for developer relevance.
-
-        Attempts LLM scoring first, falls back to heuristics on failure.
-        """
-        prompt = f"""Rate the relevance of this signal for AI/ML developers.
+        technologies = ", ".join(validated_profile.technologies) or "None supplied"
+        interests = ", ".join(validated_profile.interests) or "None supplied"
+        prompt = f"""Rate the relevance of this signal for this specific developer.
 Score from 0-100 where:
 - 0-30: Low relevance (noise, off-topic)
 - 31-60: Moderate relevance (interesting but not urgent)
 - 61-80: High relevance (important for developers to know)
 - 81-100: Critical relevance (must-know, actionable)
+
+Developer profile:
+- Technologies: {technologies}
+- Interests: {interests}
+- Experience level: {validated_profile.experience_level}
 
 Signal:
 - Source: {signal.get('source', 'unknown')}
@@ -77,48 +83,86 @@ Signal:
 - Description: {signal.get('description', '')[:500]}
 
 Respond with ONLY a JSON object:
-{{"score": <number>, "reasoning": "<one sentence>"}}"""
+{{"score": <number>, "matched_technologies": ["<exact profile technology>"], "matched_interests": ["<exact profile interest>"], "reasoning": "<one sentence explaining the profile-specific score>", "actionability": "LOW|MEDIUM|HIGH"}}
 
+Use only exact values from the supplied profile in the matched arrays. Use an
+empty array when there is no match."""
+
+        return complete_validated_json(
+            llm_client=self._get_llm_client(),
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You score technical signals for AI/ML developers. "
+                        "Return only the requested JSON object."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
+            validator=lambda payload: self._validate_response(
+                payload,
+                validated_profile,
+            ),
+            task_name=(
+                "Relevance analysis for "
+                f"'{str(signal.get('title', 'Untitled'))[:80]}'"
+            ),
+            model=self.model_id,
+            temperature=0.1,
+            max_tokens=512,
+        )
+
+    def score_batch(
+        self,
+        signals: List[Dict[str, Any]],
+        profile: DeveloperProfile | Mapping[str, Any],
+    ) -> List[Dict[str, Any]]:
+        """Score multiple signals and stop immediately on an AI failure."""
+        return [
+            {**signal, "relevance": self.score(signal, profile)}
+            for signal in signals
+        ]
+
+    @staticmethod
+    def _validate_response(
+        payload: Dict[str, Any],
+        profile: DeveloperProfile,
+    ) -> Dict[str, Any]:
         try:
-            response = self.agent.run(prompt, stream=False)
-            return self._parse_response(response.content, signal)
-        except Exception as e:
-            return self._fallback_score(signal, str(e))
+            result = RelevanceResult.model_validate(payload)
+        except ValidationError as exc:
+            raise AgentOutputError(format_validation_error(exc)) from exc
 
-    def score_batch(self, signals: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Score multiple signals, returning each with a 'relevance' key."""
-        scored = []
-        for signal in signals:
-            result = self.score(signal)
-            scored.append({**signal, "relevance": result})
-        return scored
-
-    def _parse_response(self, content: str, signal: Dict) -> Dict[str, Any]:
-        """Parse LLM JSON response into structured output."""
-        try:
-            text = content.strip()
-            if "```" in text:
-                text = text.split("```")[1].replace("json", "").strip()
-            return json.loads(text)
-        except (json.JSONDecodeError, IndexError):
-            return self._fallback_score(signal, "Parse error")
-
-    def _fallback_score(self, signal: Dict, error: str) -> Dict[str, Any]:
-        """
-        Heuristic fallback when LLM is unavailable.
-
-        Uses metadata signals (stars, points) as rough relevance proxies.
-        This is intentionally simple — the LLM path is the real logic.
-        """
-        score = 50  # Default: moderate
-        metadata = signal.get("metadata", {})
-
-        if metadata.get("stars", 0) > 100:
-            score += 20
-        if metadata.get("points", 0) > 50:
-            score += 15
-
-        return {
-            "score": min(score, 100),
-            "reasoning": f"Heuristic score (LLM unavailable: {error})",
+        allowed_technologies = {
+            technology.casefold(): technology
+            for technology in profile.technologies
         }
+        allowed_interests = {
+            interest.casefold(): interest for interest in profile.interests
+        }
+        invalid_technologies = [
+            value
+            for value in result.matched_technologies
+            if value.casefold() not in allowed_technologies
+        ]
+        invalid_interests = [
+            value
+            for value in result.matched_interests
+            if value.casefold() not in allowed_interests
+        ]
+        if invalid_technologies or invalid_interests:
+            raise AgentOutputError(
+                "matched values must come exactly from the developer profile"
+            )
+
+        result.matched_technologies = [
+            allowed_technologies[value.casefold()]
+            for value in result.matched_technologies
+        ]
+        result.matched_interests = [
+            allowed_interests[value.casefold()]
+            for value in result.matched_interests
+        ]
+        result.score = round(result.score, 1)
+        return result.model_dump(mode="json")
