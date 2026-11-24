@@ -30,8 +30,7 @@ Run only the risk agent over all cases (faster, about 3 minutes on the
 self-hosted qwen server):
 
 ```powershell
-.\.venv\Scripts\python.exe evaluations
-un_risk_evaluation.py
+.\.venv\Scripts\python.exe evaluations\run_risk_evaluation.py
 ```
 
 See `reports/RISK_IMPROVEMENT.md` for the latest risk result.

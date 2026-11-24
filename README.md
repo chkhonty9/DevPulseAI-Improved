@@ -95,8 +95,7 @@ $env:PYTHONUTF8='1'; .\.venv\Scripts\python.exe verify.py
 # Evaluation (see evaluations/README.md)
 .\.venv\Scripts\python.exe -m evaluations.run_evaluation --validate-only
 .\.venv\Scripts\python.exe -m evaluations.run_evaluation --limit 3
-.\.venv\Scripts\python.exe evaluations
-un_risk_evaluation.py   # risk agent only
+.\.venv\Scripts\python.exe evaluations\run_risk_evaluation.py   # risk agent only
 ```
 
 ## Project layout
