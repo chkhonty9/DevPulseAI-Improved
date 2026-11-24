@@ -54,6 +54,7 @@ class ReviewedSynthesisWorkflow:
         final_critic: Optional[Dict[str, Any]] = None
         revision_attempts = 0
         revision_failure: Optional[str] = None
+        removal_notes: List[str] = []
 
         for revision_number in range(self.MAX_REVISIONS + 1):
             final_critic = self.critic_agent.review(digest, validated_profile)
@@ -82,6 +83,25 @@ class ReviewedSynthesisWorkflow:
                 ContractValidationError,
                 LLMRequestError,
             ) as exc:
+                # Conservative fallback: if the model could not rewrite the
+                # flagged sentences, delete them in code (adds nothing new)
+                # and let the critic review the result again.
+                flagged = list(final_critic.get("unsupported_claims", []))
+                remove = getattr(
+                    self.synthesis_agent, "remove_flagged_sentences", None
+                )
+                if flagged and remove is not None:
+                    try:
+                        digest = remove(signals, digest, flagged)
+                        removal_notes.append(
+                            f"Revision {revision_attempts}: the model could not "
+                            "rewrite the flagged sentences, so they were "
+                            "removed by code (nothing was added): "
+                            + " | ".join(flagged)
+                        )
+                        continue
+                    except ContractValidationError:
+                        pass
                 revision_failure = (
                     f"Revision {revision_attempts} could not produce a valid "
                     f"digest: {exc}"
@@ -96,6 +116,13 @@ class ReviewedSynthesisWorkflow:
 
         if final_critic is None:
             raise RuntimeError("The reviewed synthesis workflow produced no review.")
+        if removal_notes:
+            final_critic = dict(final_critic)
+            final_critic["feedback"] = [
+                *final_critic.get("feedback", []),
+                *removal_notes,
+            ]
+            history[-1]["critic"] = final_critic
 
         payload = {
             "status": "completed" if final_critic["passed"] else "needs_review",

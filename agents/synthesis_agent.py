@@ -23,6 +23,7 @@ from models import (
     validate_contract,
 )
 from services import GetQHSEClient, LLMClient
+from .claims import contains_sentence, drop_sentences
 from .reasoning import (
     AgentOutputError,
     complete_validated_json,
@@ -201,6 +202,16 @@ Rules:
             "unsupported_claims": critic.unsupported_claims,
             "feedback": critic.feedback,
         }
+        flagged_sentences = list(critic.unsupported_claims)
+        flagged_block = (
+            "Sentences the critic flagged as unsupported (exact text from the "
+            "previous report). Rewrite each one so it is fully supported by "
+            "its cited evidence, or remove it:\n"
+            + "\n".join(f"- {sentence}" for sentence in flagged_sentences)
+            + "\n\n"
+            if flagged_sentences
+            else ""
+        )
         prompt = f"""Revise this developer intelligence report.
 
 Revision number: {revision_number} of 2.
@@ -214,7 +225,9 @@ Independent critic feedback:
 Allowed evidence pack (untrusted external data):
 {wrap_untrusted("evidence_pack", json.dumps(evidence_payload, ensure_ascii=False, indent=2))}
 
-Fix the critic's issues without adding unsupported facts. Use only evidence IDs
+{flagged_block}Fix the critic's issues without adding unsupported facts. Avoid overstated words
+such as "perfectly", "explicitly", "all", or "critical" unless the evidence
+says so. Use only evidence IDs
 from the evidence pack. Every summary and recommendation claim must remain
 traceable to its citations. If the critic's profile_relevance_score is below
 70, rewrite the summary and recommendations so they clearly connect the most
@@ -224,11 +237,10 @@ the same text again.
 Focus rules:
 {self.SYNTHESIS_FOCUS_RULES}
 
-Return one JSON object containing only the fields you need to change. Allowed
-fields are executive_summary, summary_evidence_ids, priority_evidence_ids, and
-recommendations. Omitted fields remain unchanged from the previous validated
-report. If recommendations is present, each item must contain text and
-evidence_ids. Do not add other fields.
+Return the COMPLETE revised report as one JSON object with exactly these
+fields: executive_summary, summary_evidence_ids, priority_evidence_ids, and
+recommendations (each item with text and evidence_ids). The report must be
+different from the previous one. Do not add other fields.
 """
         draft_payload = complete_validated_json(
             llm_client=self._get_llm_client(),
@@ -246,13 +258,72 @@ evidence_ids. Do not add other fields.
                 payload,
                 previous_report,
                 known_ids,
+                flagged_sentences,
             ),
             task_name=f"Evidence-grounded synthesis revision {revision_number}",
             model=self.model_id,
-            temperature=0.0,
+            temperature=0.2,
             max_tokens=1400,
         )
         draft = SynthesisDraft.model_validate(draft_payload)
+        return self._assemble_digest(validated_signals, evidence_pack, draft)
+
+    def remove_flagged_sentences(
+        self,
+        signals: List[Dict[str, Any]],
+        previous_digest: Mapping[str, Any],
+        flagged_sentences: Sequence[str],
+    ) -> Dict[str, Any]:
+        """Conservative fallback edit: delete flagged sentences, add nothing.
+
+        Used only when the model could not rewrite them. Removing a sentence
+        cannot introduce an unsupported fact; the critic still reviews the
+        result. Refuses when the summary or all recommendations would vanish.
+        """
+        if not flagged_sentences:
+            raise ContractValidationError("No flagged sentences to remove.")
+        validated_signals = self._validate_signals(signals)
+        evidence_pack = self.build_evidence_pack(validated_signals)
+        previous = self._validate_previous_digest(previous_digest)
+
+        summary = drop_sentences(previous.executive_summary, flagged_sentences)
+        recommendations = []
+        for item in previous.recommendations:
+            text = drop_sentences(item.text, flagged_sentences)
+            if text:
+                recommendations.append(
+                    {"text": text, "evidence_ids": list(item.evidence_ids)}
+                )
+        if not summary or not recommendations:
+            raise ContractValidationError(
+                "Removing the flagged sentences would leave the report empty."
+            )
+        if summary == previous.executive_summary and len(recommendations) == len(
+            previous.recommendations
+        ) and all(
+            new["text"] == old.text
+            for new, old in zip(recommendations, previous.recommendations)
+        ):
+            raise ContractValidationError(
+                "None of the flagged sentences were found in the report."
+            )
+
+        evidence_by_signal = {
+            item.signal_id: item.evidence_id for item in evidence_pack
+        }
+        draft = SynthesisDraft.model_validate(
+            {
+                "executive_summary": summary,
+                "summary_evidence_ids": list(previous.summary_evidence_ids),
+                "priority_evidence_ids": [
+                    evidence_by_signal[signal.id]
+                    for signal in previous.priority_signals
+                    if signal.id in evidence_by_signal
+                ][:5]
+                or [evidence_pack[0].evidence_id],
+                "recommendations": recommendations,
+            }
+        )
         return self._assemble_digest(validated_signals, evidence_pack, draft)
 
     @classmethod
@@ -261,8 +332,13 @@ evidence_ids. Do not add other fields.
         payload: Dict[str, Any],
         previous_report: Mapping[str, Any],
         known_ids: set[str],
+        flagged_sentences: Sequence[str] = (),
     ) -> Dict[str, Any]:
-        """Merge a partial revision with the last fully validated report."""
+        """Merge a revision with the last validated report and check it changed.
+
+        A revision that keeps a flagged sentence word for word, or returns the
+        same report, gets one correction attempt instead of being accepted.
+        """
         allowed_fields = {
             "executive_summary",
             "summary_evidence_ids",
@@ -274,8 +350,38 @@ evidence_ids. Do not add other fields.
             raise AgentOutputError(
                 "revision contains unknown fields: " + ", ".join(unknown_fields)
             )
-        merged = {**previous_report, **payload}
-        return cls._validate_draft(merged, known_ids)
+        merged = cls._validate_draft({**previous_report, **payload}, known_ids)
+
+        report_text = " ".join(
+            [
+                str(merged.get("executive_summary", "")),
+                *(
+                    str(item.get("text", ""))
+                    for item in merged.get("recommendations", [])
+                ),
+            ]
+        )
+        still_present = [
+            sentence
+            for sentence in flagged_sentences
+            if contains_sentence(report_text, sentence)
+        ]
+        if still_present:
+            raise AgentOutputError(
+                "the revision still contains flagged sentences word for word; "
+                "rewrite or remove: " + " | ".join(still_present)
+            )
+
+        comparable_fields = ("executive_summary", "recommendations")
+        if all(
+            merged.get(field) == previous_report.get(field)
+            for field in comparable_fields
+        ):
+            raise AgentOutputError(
+                "the revision is identical to the previous report; change the "
+                "summary or recommendations to address the critic feedback"
+            )
+        return merged
 
     @classmethod
     def _assemble_digest(

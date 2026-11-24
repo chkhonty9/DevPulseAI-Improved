@@ -768,7 +768,10 @@ st.markdown(
         <div class="dp-chips">
             <span class="dp-chip">Multi-provider AI</span>
             <span class="dp-chip">5 technical sources</span>
-            <span class="dp-chip">Deterministic collection</span>
+            <span class="dp-chip">Personalized relevance</span>
+            <span class="dp-chip">Cited evidence</span>
+            <span class="dp-chip">Critic review</span>
+            <span class="dp-chip">Injection-aware prompts</span>
         </div>
     </section>
     """,
@@ -777,41 +780,51 @@ st.markdown(
 
 
 if not run_button:
-    st.markdown("### How the baseline works")
-    first, second, third = st.columns(3)
-    with first:
-        st.markdown(
-            """
-            <div class="dp-card">
-                <div class="dp-card-number">01 · COLLECT</div>
-                <div class="dp-card-title">Gather technical signals</div>
-                <div class="dp-card-copy">Adapters fetch GitHub, arXiv, Hacker News, Medium, and Hugging Face data.</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    with second:
-        st.markdown(
-            """
-            <div class="dp-card">
-                <div class="dp-card-number">02 · ANALYZE</div>
-                <div class="dp-card-title">Score relevance and risk</div>
-                <div class="dp-card-copy">Your selected AI provider powers the reasoning stages while collection stays deterministic.</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    with third:
-        st.markdown(
-            """
-            <div class="dp-card">
-                <div class="dp-card-number">03 · PRIORITIZE</div>
-                <div class="dp-card-title">Build a focused digest</div>
-                <div class="dp-card-copy">Signals are ranked so urgent, relevant developments appear first.</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+    st.markdown("### How the pipeline works")
+    pipeline_steps = [
+        (
+            "01 · COLLECT",
+            "Gather technical signals",
+            "Adapters fetch GitHub, arXiv, Hacker News, Medium, and Hugging "
+            "Face data. Collection is deterministic: no AI involved.",
+        ),
+        (
+            "02 · ANALYZE",
+            "Personal relevance and evidenced risk",
+            "AI scores each signal for your profile and flags risks only "
+            "with a quote from the source. Invalid output is retried once, "
+            "never replaced by a guess.",
+        ),
+        (
+            "03 · SYNTHESIZE",
+            "A digest with citations",
+            "AI writes the brief from an evidence pack. Every summary and "
+            "action cites evidence IDs; priorities are ranked by score.",
+        ),
+        (
+            "04 · REVIEW",
+            "Critic and bounded revision",
+            "An independent critic checks groundedness, relevance, and "
+            "completeness. Up to two targeted revisions, then an honest "
+            "needs-review status.",
+        ),
+    ]
+    for row_start in (0, 2):
+        columns = st.columns(2)
+        for column, (number, title, copy) in zip(
+            columns, pipeline_steps[row_start : row_start + 2]
+        ):
+            with column:
+                st.markdown(
+                    f"""
+                    <div class="dp-card">
+                        <div class="dp-card-number">{number}</div>
+                        <div class="dp-card-title">{title}</div>
+                        <div class="dp-card-copy">{copy}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
     if key_available:
         st.info("Configuration is ready. Test the connection or run the pipeline from the sidebar.")

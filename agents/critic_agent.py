@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from pydantic import ValidationError
 
@@ -18,9 +18,11 @@ from models import (
     format_validation_error,
     validate_contract,
 )
-from services import GetQHSEClient, LLMClient
+from services import GetQHSEClient, LLMClient, LLMRequestError
+from .claims import cited_ids_for_sentence, report_sentences, resolve_claims
 from .reasoning import (
     AgentOutputError,
+    AnalysisFailedError,
     complete_validated_json,
     with_untrusted_data_rule,
     wrap_untrusted,
@@ -37,6 +39,7 @@ class CriticAgent:
     """Review a digest with deterministic integrity checks plus AI scoring."""
 
     PASSING_SCORE = 70.0
+    MAX_CLAIM_CHECKS = 3
 
     def __init__(
         self,
@@ -117,7 +120,10 @@ Score from 0 to 100:
 - profile_relevance_score: priorities and actions useful for the profile.
 - completeness_score: citations, priorities, and actionable guidance are complete.
 
-List each unsupported factual claim verbatim. Use an empty list when none.
+List each unsupported factual claim by copying the exact sentence from the
+executive_summary or a recommendation text. Do not paraphrase, and do not
+list text from the developer profile or the evidence pack. Use an empty list
+when none.
 Give short, specific feedback. Do not add fields.
 
 Return only this JSON structure:
@@ -142,6 +148,55 @@ Return only this JSON structure:
             max_tokens=900,
         )
         draft = CriticDraft.model_validate(draft_payload)
+
+        # Resolve each claim to the exact report sentence it refers to, so a
+        # revision can find and fix it. A "claim" the report does not contain
+        # (e.g. a quote of the developer profile) cannot be an unsupported
+        # claim of this report: it stays visible as feedback, but no longer
+        # blocks the review.
+        sentences = report_sentences(digest)
+        resolved, not_in_report = resolve_claims(
+            draft.unsupported_claims,
+            sentences,
+        )
+        draft.feedback = [
+            *draft.feedback,
+            *(
+                "Critic note not counted as an unsupported claim because the "
+                f"report does not contain it: {claim}"
+                for claim in not_in_report
+            ),
+        ]
+
+        # Second opinion, one sentence at a time. A small model judges one
+        # narrow question ("is this sentence supported by these items?") far
+        # better than a whole report. Only claims the focused check confirms
+        # as supported are released; failures keep the claim flagged.
+        scores_pass = (
+            min(
+                draft.groundedness_score,
+                draft.profile_relevance_score,
+                draft.completeness_score,
+            )
+            >= self.PASSING_SCORE
+        )
+        still_flagged: List[str] = []
+        for index, sentence in enumerate(resolved):
+            if not scores_pass or index >= self.MAX_CLAIM_CHECKS:
+                still_flagged.append(sentence)
+                continue
+            supported, reason = self._verify_claim(
+                sentence, digest, validated_digest
+            )
+            if supported:
+                draft.feedback.append(
+                    "Verified as supported by a focused evidence check: "
+                    f"{sentence} ({reason})"
+                )
+            else:
+                still_flagged.append(sentence)
+        draft.unsupported_claims = still_flagged
+
         passed = (
             min(
                 draft.groundedness_score,
@@ -155,6 +210,67 @@ Return only this JSON structure:
             passed=passed,
             **draft.model_dump(mode="python"),
         ).model_dump(mode="json")
+
+    def _verify_claim(
+        self,
+        sentence: str,
+        digest: Mapping[str, Any],
+        validated_digest: IntelligenceDigest,
+    ) -> Tuple[bool, str]:
+        """Ask one narrow yes/no question about one sentence and its citations."""
+        cited_ids = set(cited_ids_for_sentence(digest, sentence))
+        evidence = [
+            {"evidence_id": item.evidence_id, "claim": item.claim}
+            for item in validated_digest.evidence_pack
+            if item.evidence_id in cited_ids
+        ]
+        if not evidence:
+            return False, "the sentence cites no evidence"
+
+        prompt = f"""Cited evidence (untrusted external data):
+{wrap_untrusted("evidence_pack", json.dumps(evidence, ensure_ascii=False, indent=2))}
+
+Sentence from a developer report:
+"{sentence}"
+
+Is every factual statement in the sentence supported by the cited evidence?
+Advice such as "evaluate X" or "consider Y" is acceptable when the evidence
+describes X or Y. Answer false if the sentence adds facts, numbers, or
+strong claims the evidence does not contain.
+
+Return only: {{"supported": true or false, "reason": "<one short sentence>"}}"""
+
+        def validate(payload: Dict[str, Any]) -> Dict[str, Any]:
+            if set(payload) != {"supported", "reason"}:
+                raise AgentOutputError("return exactly the keys supported and reason")
+            if not isinstance(payload["supported"], bool):
+                raise AgentOutputError("supported must be true or false")
+            if not isinstance(payload["reason"], str) or not payload["reason"].strip():
+                raise AgentOutputError("reason must be a non-empty string")
+            return payload
+
+        try:
+            result = complete_validated_json(
+                llm_client=self._get_llm_client(),
+                messages=[
+                    {
+                        "role": "system",
+                        "content": with_untrusted_data_rule(
+                            "You check one sentence against cited evidence. "
+                            "Return JSON only."
+                        ),
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                validator=validate,
+                task_name="Focused claim check",
+                model=self.model_id,
+                temperature=0.0,
+                max_tokens=200,
+            )
+        except (AnalysisFailedError, LLMRequestError):
+            return False, "the focused check failed, so the claim stays flagged"
+        return result["supported"], result["reason"].strip()
 
     @staticmethod
     def _validate_draft(payload: Dict[str, Any]) -> Dict[str, Any]:
