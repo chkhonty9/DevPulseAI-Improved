@@ -921,7 +921,7 @@ else:
     synthesis_started = perf_counter()
     try:
         with st.status("Building intelligence digest") as status:
-            digest = synthesis.synthesize(assessed)
+            digest = synthesis.synthesize(assessed, developer_profile)
             status.update(label="Digest complete", state="complete")
         timeline.append(
             {

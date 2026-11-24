@@ -48,7 +48,7 @@ class ReviewedSynthesisWorkflow:
         digest = (
             dict(initial_digest)
             if initial_digest is not None
-            else self.synthesis_agent.synthesize(signals)
+            else self.synthesis_agent.synthesize(signals, validated_profile)
         )
         history = []
         final_critic: Optional[Dict[str, Any]] = None
@@ -75,6 +75,7 @@ class ReviewedSynthesisWorkflow:
                     digest,
                     final_critic,
                     revision_number=revision_number + 1,
+                    profile=validated_profile,
                 )
             except (
                 AnalysisFailedError,

@@ -140,7 +140,7 @@ def run_pipeline(api_key: Optional[str] = None, model: Optional[str] = None):
     # Stage 5: Synthesize an AI digest constrained to the evidence pack
     synthesis = SynthesisAgent(model_id=settings.model, llm_client=llm_client)
     print("\n📋 Generating Intelligence Digest...")
-    digest = synthesis.synthesize(assessed)
+    digest = synthesis.synthesize(assessed, developer_profile)
 
     # Stage 6: Independently review evidence integrity and report quality
     critic = CriticAgent(model_id=settings.model, llm_client=llm_client)

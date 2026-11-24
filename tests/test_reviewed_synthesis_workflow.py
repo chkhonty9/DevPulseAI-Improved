@@ -21,9 +21,11 @@ class FakeSynthesisAgent:
     def __init__(self):
         self.synthesize_calls = 0
         self.revise_calls = 0
+        self.profiles_seen = []
 
-    def synthesize(self, signals):
+    def synthesize(self, signals, profile=None):
         self.synthesize_calls += 1
+        self.profiles_seen.append(profile)
         return valid_digest()
 
     def revise(
@@ -33,8 +35,10 @@ class FakeSynthesisAgent:
         critic,
         *,
         revision_number,
+        profile=None,
     ):
         self.revise_calls += 1
+        self.profiles_seen.append(profile)
         revised = deepcopy(previous_digest)
         revised["executive_summary"] = f"Revised summary {revision_number}."
         return revised
@@ -58,6 +62,7 @@ class FailingRevisionSynthesisAgent(FakeSynthesisAgent):
         critic,
         *,
         revision_number,
+        profile=None,
     ):
         self.revise_calls += 1
         raise AnalysisFailedError("The model omitted required revision fields.")
@@ -90,6 +95,11 @@ class ReviewedSynthesisWorkflowTests(unittest.TestCase):
         self.assertEqual(result["status"], "completed")
         self.assertEqual(synthesis.revise_calls, 2)
         self.assertEqual(critic.calls, 3)
+        # Synthesis and both revisions receive the developer profile.
+        self.assertEqual(len(synthesis.profiles_seen), 3)
+        self.assertTrue(
+            all(profile is not None for profile in synthesis.profiles_seen)
+        )
         self.assertEqual(
             [item["revision_number"] for item in result["revision_history"]],
             [0, 1, 2],

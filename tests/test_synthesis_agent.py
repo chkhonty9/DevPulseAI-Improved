@@ -1,5 +1,6 @@
-import json
+from copy import deepcopy
 from datetime import datetime, timezone
+import json
 import unittest
 
 from pydantic import ValidationError
@@ -62,6 +63,88 @@ def valid_response(evidence_id):
             ],
         }
     )
+
+
+class RecordingClient(SequenceClient):
+    def __init__(self, responses):
+        super().__init__(responses)
+        self.messages = []
+
+    def complete_json(self, messages, **kwargs):
+        self.messages.append(messages)
+        return super().complete_json(messages, **kwargs)
+
+
+class ProfileAndPriorityTests(unittest.TestCase):
+    def setUp(self):
+        self.profile = {
+            "technologies": ["Python"],
+            "interests": ["AI agents"],
+            "experience_level": "intermediate",
+        }
+
+    def _signal(self, signal_id, score, risk_level="LOW"):
+        signal = deepcopy(assessed_signal())
+        signal["id"] = signal_id
+        signal["title"] = f"Signal {signal_id}"
+        signal["url"] = f"https://example.com/{signal_id}"
+        signal["relevance"]["score"] = float(score)
+        if risk_level == "LOW":
+            signal["risk"] = {
+                "risk_level": "LOW",
+                "concerns": [],
+                "evidence_quotes": [],
+                "recommended_actions": [],
+                "breaking_changes": False,
+            }
+        else:
+            signal["risk"]["risk_level"] = risk_level
+        return signal
+
+    def test_profile_and_matches_reach_the_synthesis_prompt(self):
+        signal = self._signal("a", 88)
+        evidence_id = SynthesisAgent.build_evidence_pack([signal])[0].evidence_id
+        client = RecordingClient([valid_response(evidence_id)])
+
+        SynthesisAgent("test/model", client).synthesize([signal], self.profile)
+
+        prompt = client.messages[0][-1]["content"]
+        self.assertIn("Developer profile", prompt)
+        self.assertIn("- Technologies: Python", prompt)
+        self.assertIn("- Interests: AI agents", prompt)
+        self.assertIn('"matched_interests": [\n      "AI agents"', prompt)
+        self.assertIn("Focus rules", prompt)
+
+    def test_priority_is_ranked_by_scores_not_model_choice(self):
+        signals = [
+            self._signal("low", 40),
+            self._signal("top", 90),
+            self._signal("risky", 70, "HIGH"),  # 70 x 1.5 = 105
+            self._signal("mid", 75),
+        ]
+        pack = SynthesisAgent.build_evidence_pack(signals)
+        low_id = next(item.evidence_id for item in pack if item.signal_id == "low")
+        # The model names only the least relevant item as its priority.
+        client = RecordingClient([valid_response(low_id)])
+
+        digest = SynthesisAgent("test/model", client).synthesize(
+            signals, self.profile
+        )
+
+        self.assertEqual(
+            [signal["id"] for signal in digest["priority_signals"]],
+            ["risky", "top", "mid", "low"],
+        )
+
+    def test_priority_is_capped_at_five(self):
+        signals = [self._signal(f"s{i}", 50 + i) for i in range(7)]
+        pack = SynthesisAgent.build_evidence_pack(signals)
+        client = RecordingClient([valid_response(pack[0].evidence_id)])
+
+        digest = SynthesisAgent("test/model", client).synthesize(signals)
+
+        self.assertEqual(len(digest["priority_signals"]), 5)
+        self.assertEqual(digest["priority_signals"][0]["id"], "s6")
 
 
 class SynthesisAgentTests(unittest.TestCase):

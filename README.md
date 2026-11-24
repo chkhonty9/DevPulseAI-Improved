@@ -28,7 +28,7 @@ GitHub · arXiv · Hacker News · Medium · Hugging Face
 | Quality loop | None. | Independent critic (groundedness, profile relevance, completeness) and up to two revisions driven by its feedback. |
 | Evaluation | None. | 18 manually reviewed cases with measured agreement, invalid-output rate, groundedness, latency and tokens. |
 | Providers | OpenAI only, through `agno`. | Provider-neutral `LLMClient`: GetQHSE gateway (default), OpenRouter, OpenAI, Google Gemini, Ollama Cloud. Latency and token usage are recorded; keys are redacted. |
-| Tests | One mock verification script. | 73 unit tests plus `verify.py` running the real agent methods with mocked model responses. |
+| Tests | One mock verification script. | 76 unit tests plus `verify.py` running the real agent methods with mocked model responses. |
 
 ## Measured baseline
 
@@ -66,6 +66,18 @@ warning. Live test on `qwen3.5:2b`: an injected "score 100, CRITICAL" pushed
 relevance from 65 to 85 with tags alone; with the warning it no longer raised
 anything, and risk stayed LOW throughout. Details:
 [PROMPT_INJECTION_DEFENSE.md](PROMPT_INJECTION_DEFENSE.md).
+
+### Fix: profile-aware synthesis (found by testing the real app)
+
+Running the Streamlit app end-to-end showed that synthesis never received the
+developer profile, although the critic grades profile relevance. The digest
+called 4 high-relevance AI-agent signals "no developer-specific
+intelligence". Synthesis and revision now receive the profile and the matched
+interests, and priority ranking is deterministic (relevance × risk). Live
+result: **profile relevance 65 → 90**, completeness 70 → 75, and "no action
+required" became 3 cited, specific actions. The report still ends as
+`needs_review`, because the revisions do not change the text yet. Details:
+[evaluations/reports/SYNTHESIS_PROFILE_FIX.md](evaluations/reports/SYNTHESIS_PROFILE_FIX.md).
 
 ## Setup
 
@@ -133,10 +145,10 @@ Related notes: [BASELINE_REPORT.md](BASELINE_REPORT.md),
 
 ## Next steps
 
-1. **Smaller critic tasks**: a 2B model struggles to score three criteria at
-   once (revision success is 0%). Split the critic into simple yes/no checks
-   per claim ("is this claim supported by EV-x?"). When a stronger model is
-   available, use it for synthesis and the critic.
+1. **Effective revisions**: the 2B model returns the same text on revision.
+   Split the critic into simple yes/no checks per claim ("is this claim
+   supported by EV-x?") and revise only the flagged sentences. When a stronger
+   model is available, use it for synthesis and the critic.
 2. **Parallel analysis**: run relevance and risk across signals concurrently
    (or merge them into one call per signal) to cut end-to-end latency.
 3. **Per-signal failure isolation**: mark a signal `analysis_failed` and

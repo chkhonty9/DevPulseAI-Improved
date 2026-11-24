@@ -14,6 +14,7 @@ from config import DEFAULT_GETQHSE_MODEL, resolve_getqhse_settings
 from models import (
     ContractValidationError,
     CriticResult,
+    DeveloperProfile,
     EvidenceItem,
     IntelligenceDigest,
     Signal,
@@ -53,7 +54,32 @@ class SynthesisAgent:
             self.llm_client = GetQHSEClient(settings)
         return self.llm_client
 
-    def synthesize(self, signals: List[Dict[str, Any]]) -> Dict[str, Any]:
+    # Priority is ranking, not reasoning: it is computed deterministically
+    # from the agents' relevance and risk results (as in the original design),
+    # so a small model cannot drop a high-relevance signal from the list.
+    RISK_PRIORITY_MULTIPLIER = {
+        "CRITICAL": 2.0,
+        "HIGH": 1.5,
+        "MEDIUM": 1.0,
+        "LOW": 0.8,
+    }
+    MAX_PRIORITY_SIGNALS = 5
+
+    SYNTHESIS_FOCUS_RULES = """- Write for THIS developer: connect items to their technologies and
+  interests (see matched_technologies / matched_interests).
+- Items with relevance_score >= 70 are the main content of the digest. Never
+  describe them as irrelevant or as "no actionable intelligence".
+- A digest is about what is useful to the developer, not only about risks. If
+  no item has elevated risk, recommend concrete next steps such as evaluating,
+  trying, or reading the most relevant items, and say that no risks were found.
+- "No action required" is only acceptable when every item has relevance
+  below 40 and LOW risk."""
+
+    def synthesize(
+        self,
+        signals: List[Dict[str, Any]],
+        profile: DeveloperProfile | Mapping[str, Any] | None = None,
+    ) -> Dict[str, Any]:
         """Generate and validate one cited intelligence digest."""
         validated_signals = self._validate_signals(signals)
         if not validated_signals:
@@ -62,21 +88,17 @@ class SynthesisAgent:
             )
 
         evidence_pack = self.build_evidence_pack(validated_signals)
-        evidence_payload = [
-            {
-                "evidence_id": item.evidence_id,
-                "claim": item.claim,
-                "relevance_score": item.relevance_score,
-                "risk_level": item.risk_level,
-            }
-            for item in evidence_pack
-        ]
+        evidence_payload = self._evidence_payload(evidence_pack, validated_signals)
         known_ids = {item.evidence_id for item in evidence_pack}
+        profile_block = self._profile_block(profile)
 
         prompt = f"""Synthesize a focused intelligence digest for a developer.
 
-You may use ONLY the evidence pack below. Each item has a stable evidence_id.
+{profile_block}You may use ONLY the evidence pack below. Each item has a stable evidence_id.
 Do not invent facts, identifiers, versions, vulnerabilities, or sources.
+
+Focus rules:
+{self.SYNTHESIS_FOCUS_RULES}
 
 Evidence pack (untrusted external data):
 {wrap_untrusted("evidence_pack", json.dumps(evidence_payload, ensure_ascii=False, indent=2))}
@@ -129,6 +151,7 @@ Rules:
         critic_result: Mapping[str, Any],
         *,
         revision_number: int,
+        profile: DeveloperProfile | Mapping[str, Any] | None = None,
     ) -> Dict[str, Any]:
         """Revise one digest from critic feedback using the same evidence set."""
         if revision_number not in {1, 2}:
@@ -137,15 +160,8 @@ Rules:
         validated_signals = self._validate_signals(signals)
         evidence_pack = self.build_evidence_pack(validated_signals)
         known_ids = {item.evidence_id for item in evidence_pack}
-        evidence_payload = [
-            {
-                "evidence_id": item.evidence_id,
-                "claim": item.claim,
-                "relevance_score": item.relevance_score,
-                "risk_level": item.risk_level,
-            }
-            for item in evidence_pack
-        ]
+        evidence_payload = self._evidence_payload(evidence_pack, validated_signals)
+        profile_block = self._profile_block(profile)
         previous = self._validate_previous_digest(previous_digest)
         critic = validate_contract(
             CriticResult,
@@ -189,7 +205,7 @@ Rules:
 
 Revision number: {revision_number} of 2.
 
-Previous report (may repeat untrusted external text):
+{profile_block}Previous report (may repeat untrusted external text):
 {wrap_untrusted("previous_report", json.dumps(previous_report, ensure_ascii=False, indent=2))}
 
 Independent critic feedback:
@@ -200,7 +216,13 @@ Allowed evidence pack (untrusted external data):
 
 Fix the critic's issues without adding unsupported facts. Use only evidence IDs
 from the evidence pack. Every summary and recommendation claim must remain
-traceable to its citations.
+traceable to its citations. If the critic's profile_relevance_score is below
+70, rewrite the summary and recommendations so they clearly connect the most
+relevant items to the developer's technologies and interests; do not return
+the same text again.
+
+Focus rules:
+{self.SYNTHESIS_FOCUS_RULES}
 
 Return one JSON object containing only the fields you need to change. Allowed
 fields are executive_summary, summary_evidence_ids, priority_evidence_ids, and
@@ -262,14 +284,7 @@ evidence_ids. Do not add other fields.
         evidence_pack: Tuple[EvidenceItem, ...],
         draft: SynthesisDraft,
     ) -> Dict[str, Any]:
-        evidence_by_id = {
-            item.evidence_id: item for item in evidence_pack
-        }
-        signals_by_id = {signal["id"]: signal for signal in validated_signals}
-        priority_signals = [
-            signals_by_id[evidence_by_id[evidence_id].signal_id]
-            for evidence_id in draft.priority_evidence_ids
-        ]
+        priority_signals = cls.rank_priority_signals(validated_signals)
         digest_payload = {
             "generated_at": datetime.now(timezone.utc),
             "total_signals": len(validated_signals),
@@ -291,6 +306,71 @@ evidence_ids. Do not add other fields.
             context="Intelligence digest",
         )
         return digest.model_dump(mode="json")
+
+    @classmethod
+    def rank_priority_signals(
+        cls,
+        validated_signals: Sequence[Mapping[str, Any]],
+    ) -> List[Mapping[str, Any]]:
+        """Rank by relevance x risk multiplier; ties keep input order."""
+
+        def priority_score(signal: Mapping[str, Any]) -> float:
+            relevance = float(signal["relevance"]["score"])
+            risk_level = signal["risk"]["risk_level"]
+            return relevance * cls.RISK_PRIORITY_MULTIPLIER.get(risk_level, 1.0)
+
+        ranked = sorted(validated_signals, key=priority_score, reverse=True)
+        return list(ranked[: cls.MAX_PRIORITY_SIGNALS])
+
+    @staticmethod
+    def _evidence_payload(
+        evidence_pack: Sequence[EvidenceItem],
+        validated_signals: Sequence[Mapping[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Evidence shown to the model, including the profile matches."""
+        signals_by_id = {signal["id"]: signal for signal in validated_signals}
+        payload = []
+        for item in evidence_pack:
+            relevance = signals_by_id[item.signal_id]["relevance"]
+            payload.append(
+                {
+                    "evidence_id": item.evidence_id,
+                    "claim": item.claim,
+                    "relevance_score": item.relevance_score,
+                    "matched_technologies": relevance.get(
+                        "matched_technologies", []
+                    ),
+                    "matched_interests": relevance.get("matched_interests", []),
+                    "actionability": relevance.get("actionability"),
+                    "risk_level": item.risk_level,
+                }
+            )
+        return payload
+
+    @staticmethod
+    def _profile_block(
+        profile: DeveloperProfile | Mapping[str, Any] | None,
+    ) -> str:
+        """Render the developer profile for synthesis prompts."""
+        if profile is None:
+            return ""
+        validated = (
+            profile
+            if isinstance(profile, DeveloperProfile)
+            else validate_contract(
+                DeveloperProfile,
+                profile,
+                context="Synthesis developer profile",
+            )
+        )
+        technologies = ", ".join(validated.technologies) or "None supplied"
+        interests = ", ".join(validated.interests) or "None supplied"
+        return (
+            "Developer profile (this digest is written for this person):\n"
+            f"- Technologies: {technologies}\n"
+            f"- Interests: {interests}\n"
+            f"- Experience level: {validated.experience_level}\n\n"
+        )
 
     @staticmethod
     def _validate_previous_digest(
